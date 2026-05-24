@@ -100,7 +100,6 @@ export default function PackerInterface() {
       captureLabel().then(blob => { if (blob) labelBlobRef.current = blob; });
     }
   }, [machineState, captureLabel]);
-  }, [recorder.ready, recorder.streamRef]);
 
   // ----- packer list ---------------------------------------------------------
   useEffect(() => {
