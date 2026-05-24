@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true,
-    port: 5173,
+    port: 5174,
+    allowedHosts: ['packer.kingslee.my.id', 'localhost', '192.168.1.250'],
   },
 });
