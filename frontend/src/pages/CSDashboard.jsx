@@ -239,7 +239,7 @@ function PlayerCard({ row }) {
       </div>
     );
   }
-  if (row.status !== "available" || !row.minio_url) {
+  if (row.status !== "available" || (!row.minio_object_key && !row.minio_url)) {
     return (
       <div className="aspect-video w-full rounded-md border border-border bg-slate-900/60 flex flex-col items-center justify-center text-slate-400 text-sm gap-2">
         <StatusPill status={row.status} label={row.status_label} />
@@ -251,13 +251,16 @@ function PlayerCard({ row }) {
       </div>
     );
   }
+
+  const streamUrl = `${import.meta.env.VITE_API_BASE_URL}/api/packing-videos/${row.id}/stream`;
+
   return (
     <video
       key={row.id}
       controls
       autoPlay={false}
       preload="metadata"
-      src={row.minio_url}
+      src={streamUrl}
       className="w-full rounded-md bg-black aspect-video"
     >
       Your browser does not support inline video playback.

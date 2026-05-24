@@ -126,6 +126,24 @@ class PackingVideoController extends Controller
     }
 
     /**
+     * GET /api/packing-videos/{id}/stream
+     *
+     * Streams the compressed video from MinIO with credentials (no public bucket needed).
+     */
+    public function stream(PackingVideo $packingVideo)
+    {
+        if (! $packingVideo->minio_object_key || $packingVideo->status !== VideoStatus::Available) {
+            return response()->json(['message' => 'Video not available yet'], 404);
+        }
+
+        try {
+            return Storage::disk('minio')->response($packingVideo->minio_object_key);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Video file not found'], 404);
+        }
+    }
+
+    /**
      * DELETE /api/packing-videos/{id}
      * (Optional, but useful for the dashboard's "remove" flow.)
      */
