@@ -60,7 +60,7 @@ class CompressAndUploadVideo implements ShouldQueue
         ]);
 
         try {
-            $this->runFfmpeg($rawAbsolute, $compressedAbsolute);
+            $this->runFfmpeg($rawAbsolute, $compressedAbsolute, $video);
 
             $objectKey = $minio->buildObjectKey(
                 $video->order_id,
@@ -116,19 +116,35 @@ class CompressAndUploadVideo implements ShouldQueue
         return $dir.DIRECTORY_SEPARATOR.$name.'.h265.mp4';
     }
 
-    private function runFfmpeg(string $input, string $output): void
+    private function runFfmpeg(string $input, string $output, PackingVideo $video): void
     {
+        // Build overlay text: timestamp + order ID + packer
+        // Colons in time must be escaped as \: for FFmpeg filter parser
+        $ts     = str_replace(':', '\\:', ($video->recorded_at ?? now())->format('Y-m-d H:i:s'));
+        $resi   = $video->order_id;
+        $packer = optional($video->packer)->code ?? '-';
+
+        // drawtext: timestamp top-left, order|packer below it
+        // Colons in time must be escaped as \: for FFmpeg filter parser
+        $drawText = sprintf(
+            "drawtext=text='%s':fontsize=22:fontcolor=white:box=1:boxcolor=black@0.5:x=12:y=12," .
+            "drawtext=text='%s':fontsize=18:fontcolor=yellow:box=1:boxcolor=black@0.5:x=12:y=42",
+            $ts,
+            "{$resi} | {$packer}",
+        );
+
         $cmd = [
             config('video.ffmpeg_binary'),
             '-y',
             '-i', $input,
+            '-vf', $drawText,
             '-c:v', 'libx265',
             '-preset', config('video.preset'),
             '-crf', (string) config('video.crf'),
-            '-tag:v', 'hvc1',          // makes the output Apple/QuickTime/Safari playable
+            '-tag:v', 'hvc1',
             '-c:a', config('video.audio_codec'),
             '-b:a', config('video.audio_bitrate'),
-            '-movflags', '+faststart', // enable streaming / progressive playback in the dashboard
+            '-movflags', '+faststart',
             $output,
         ];
 
