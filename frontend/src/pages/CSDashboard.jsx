@@ -54,11 +54,11 @@ export default function CSDashboard() {
     <div className="flex h-full">
       {/* ---------- LEFT: searchable table ---------------------------- */}
       <section className="flex-1 min-w-0 flex flex-col">
-        <header className="flex items-center justify-between gap-4 border-b border-border px-6 py-4 bg-panel">
+        <header className="flex items-center justify-between gap-4 border-b border-white/5 px-6 py-5 bg-gradient-to-r from-slate-900 to-slate-900/80 backdrop-blur-sm">
           <div>
-            <h1 className="text-xl font-bold">Customer Service Dashboard</h1>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Search packing videos by Order ID / Resi, then play inline.
+            <h1 className="text-xl font-bold text-white tracking-tight">CS Dashboard</h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Search packing videos by Order ID / Resi
             </p>
           </div>
           <SearchBox
@@ -70,9 +70,9 @@ export default function CSDashboard() {
           />
         </header>
 
-        <div className="flex-1 min-h-0 overflow-auto">
+        <div className="flex-1 min-h-0 overflow-auto bg-slate-950">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-border text-xs uppercase tracking-wider text-slate-400">
+            <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-xl border-b border-white/5 text-[10px] uppercase tracking-[0.15em] text-slate-500 font-semibold">
               <tr>
                 <Th className="w-[180px]">Order ID</Th>
                 <Th className="w-[130px]">Status</Th>
@@ -82,7 +82,7 @@ export default function CSDashboard() {
                 <Th className="w-[80px]"></Th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-white/[0.03]">
               {loading && rows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="py-16 text-center text-slate-500">
@@ -125,9 +125,9 @@ export default function CSDashboard() {
       </section>
 
       {/* ---------- RIGHT: inline player ------------------------------ */}
-      <aside className="w-[480px] shrink-0 border-l border-border bg-panel flex flex-col">
-        <div className="p-4 border-b border-border">
-          <div className="text-xs uppercase tracking-widest text-slate-400">
+      <aside className="w-[480px] shrink-0 border-l border-white/5 bg-gradient-to-b from-slate-900 to-slate-950 flex flex-col">
+        <div className="p-4 border-b border-white/5">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
             Preview
           </div>
           <div className="text-sm font-mono text-slate-200 mt-0.5 truncate">
@@ -152,10 +152,11 @@ function SearchBox({ value, onChange }) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search Order ID / Resi…"
-        className="w-80 rounded-md bg-slate-800 border border-border pl-9 pr-3 py-2 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        className="w-80 rounded-xl bg-white/[0.04] border border-white/[0.08] pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-600
+                   focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/20 transition-all duration-200"
       />
       <svg
-        className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500"
+        className="absolute left-3 top-3 h-4 w-4 text-slate-600"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -182,8 +183,8 @@ function Row({ row, selected, onSelect }) {
   return (
     <tr
       onClick={onSelect}
-      className={`cursor-pointer border-b border-border/60 transition-colors ${
-        selected ? "bg-emerald-500/5" : "hover:bg-slate-800/40"
+      className={`cursor-pointer border-b border-border/60 transition-all duration-150 ${
+        selected ? "bg-emerald-500/5 border-l-2 border-l-emerald-400" : "hover:bg-white/[0.02] border-l-2 border-l-transparent"
       }`}
     >
       <td className="px-4 py-3 font-mono text-slate-100">{row.order_id}</td>
@@ -271,14 +272,15 @@ function PipelineBar({ status }) {
 function PlayerCard({ row }) {
   if (!row) {
     return (
-      <div className="aspect-video w-full rounded-md border border-dashed border-border bg-slate-900/40 flex items-center justify-center text-slate-500 text-sm">
-        Select a video on the left to play it here.
+      <div className="aspect-video w-full rounded-xl border border-dashed border-white/5 bg-white/[0.02] flex flex-col items-center justify-center text-slate-600 text-sm gap-2">
+        <svg className="w-10 h-10 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+        Select a video to play
       </div>
     );
   }
   if (row.status !== "available" || (!row.minio_object_key && !row.minio_url)) {
     return (
-      <div className="aspect-video w-full rounded-md border border-border bg-slate-900/60 flex flex-col items-center justify-center text-slate-400 text-sm gap-2">
+      <div className="aspect-video w-full rounded-xl border border-white/5 bg-white/[0.02] flex flex-col items-center justify-center gap-3">
         <StatusPill status={row.status} label={row.status_label} />
         <span>
           {row.status === "failed"
@@ -293,16 +295,18 @@ function PlayerCard({ row }) {
 
   return (
     <>
-      <video
-        key={row.id}
-        controls
-        autoPlay={false}
-        preload="metadata"
-        src={streamUrl}
-        className="w-full rounded-md bg-black aspect-video"
-      >
-        Your browser does not support inline video playback.
-      </video>
+      <div className="rounded-xl overflow-hidden border border-white/5 shadow-2xl shadow-black/50 ring-1 ring-white/[0.03]">
+        <video
+          key={row.id}
+          controls
+          autoPlay={false}
+          preload="metadata"
+          src={streamUrl}
+          className="w-full bg-black aspect-video"
+        >
+          Your browser does not support inline video playback.
+        </video>
+      </div>
       <LabelDownload row={row} />
     </>
   );
@@ -316,9 +320,10 @@ function LabelDownload({ row }) {
       href={labelUrl}
       target="_blank"
       rel="noreferrer"
-      className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-blue-600 hover:bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white transition"
+      className="mt-2 inline-flex items-center gap-2 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/20 hover:border-blue-400/30 px-4 py-2 text-xs font-semibold text-blue-300 transition-all duration-200"
     >
-      📷 Download Label
+      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+      Download Label
     </a>
   );
 }
@@ -337,25 +342,28 @@ function Metadata({ row }) {
     ["MinIO object",    row.minio_object_key || "—"],
   ];
   return (
-    <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-xs">
-      {items.map(([k, v]) => (
-        <div key={k} className="contents">
-          <dt className="text-slate-500">{k}</dt>
-          <dd className="text-slate-200 font-mono break-all">{v ?? "—"}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="rounded-xl bg-white/[0.02] border border-white/[0.05] p-4">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 mb-3">Metadata</div>
+      <dl className="grid grid-cols-[100px_1fr] gap-x-3 gap-y-2 text-[11px]">
+        {items.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="text-slate-500 font-medium">{k}</dt>
+            <dd className="text-slate-300 font-mono truncate">{v ?? "—"}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
 function Pagination({ page, lastPage, total, onChange }) {
   return (
-    <div className="flex items-center justify-between border-t border-border bg-slate-900 px-6 py-3 text-xs text-slate-400">
+    <div className="flex items-center justify-between border-t border-white/5 bg-slate-900/80 backdrop-blur-sm px-6 py-3 text-xs text-slate-500">
       <div>
-        Page <span className="text-slate-200 font-semibold">{page}</span> of{" "}
-        <span className="text-slate-200 font-semibold">{lastPage}</span>
-        <span className="ml-3 text-slate-500">·</span>
-        <span className="ml-3 text-slate-200 font-semibold">{total.toLocaleString()}</span> total
+        Page <span className="text-slate-300 font-bold">{page}</span> of{" "}
+        <span className="text-slate-300 font-bold">{lastPage}</span>
+        <span className="ml-3 text-slate-700">·</span>
+        <span className="ml-3 text-slate-300 font-bold">{total.toLocaleString()}</span> total
       </div>
       <div className="flex gap-2">
         <PageBtn disabled={page <= 1} onClick={() => onChange(page - 1)}>
@@ -375,7 +383,9 @@ function PageBtn({ children, disabled, onClick }) {
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="rounded-md border border-border bg-slate-800 px-3 py-1.5 font-medium hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800"
+      className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-3.5 py-2 font-semibold text-slate-400
+                 hover:bg-white/[0.06] hover:text-slate-200 hover:border-white/10
+                 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
     >
       {children}
     </button>
