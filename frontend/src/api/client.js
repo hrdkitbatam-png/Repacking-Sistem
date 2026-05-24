@@ -58,7 +58,7 @@ export async function getVideoByOrder(orderId) {
   return data;
 }
 
-export async function uploadVideo({ orderId, packerCode, blob, recordedAt }) {
+export async function uploadVideo({ orderId, packerCode, blob, recordedAt, labelBlob }) {
   const form = new FormData();
   form.append("order_id", orderId);
   if (packerCode) form.append("packer_code", packerCode);
@@ -68,6 +68,11 @@ export async function uploadVideo({ orderId, packerCode, blob, recordedAt }) {
     blob.type.includes("mp4") ? "mp4" : "webm"
   }`;
   form.append("video", blob, filename);
+
+  // Label photo from second webcam
+  if (labelBlob && labelBlob.size > 0) {
+    form.append("label_photo", labelBlob, `${orderId}-label.jpg`);
+  }
 
   const { data } = await api.post("/packing-videos", form, {
     headers: { "Content-Type": "multipart/form-data" },

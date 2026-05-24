@@ -292,16 +292,34 @@ function PlayerCard({ row }) {
   const streamUrl = `${import.meta.env.VITE_API_BASE_URL}/api/packing-videos/${row.id}/stream`;
 
   return (
-    <video
-      key={row.id}
-      controls
-      autoPlay={false}
-      preload="metadata"
-      src={streamUrl}
-      className="w-full rounded-md bg-black aspect-video"
+    <>
+      <video
+        key={row.id}
+        controls
+        autoPlay={false}
+        preload="metadata"
+        src={streamUrl}
+        className="w-full rounded-md bg-black aspect-video"
+      >
+        Your browser does not support inline video playback.
+      </video>
+      <LabelDownload row={row} />
+    </>
+  );
+}
+
+function LabelDownload({ row }) {
+  if (!row.label_path) return null;
+  const labelUrl = `${import.meta.env.VITE_API_BASE_URL}/api/packing-videos/${row.id}/label`;
+  return (
+    <a
+      href={labelUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-blue-600 hover:bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white transition"
     >
-      Your browser does not support inline video playback.
-    </video>
+      📷 Download Label
+    </a>
   );
 }
 

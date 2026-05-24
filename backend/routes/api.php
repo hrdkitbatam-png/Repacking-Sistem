@@ -9,6 +9,7 @@ Route::prefix('packing-videos')->group(function () {
     Route::post('/',                [PackingVideoController::class, 'store']);
     Route::get('by-order/{orderId}',[PackingVideoController::class, 'byOrder']);
     Route::get('{packingVideo}/stream', [PackingVideoController::class, 'stream']);
+    Route::get('{packingVideo}/label',  [PackingVideoController::class, 'label']);
     Route::get('{packingVideo}',    [PackingVideoController::class, 'show']);
     Route::delete('{packingVideo}', [PackingVideoController::class, 'destroy']);
 });

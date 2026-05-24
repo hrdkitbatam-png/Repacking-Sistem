@@ -83,6 +83,7 @@ class PackingVideoController extends Controller
      *   - packer_code  (string, optional)  — links to packers.code
      *   - recorded_at  (ISO 8601, optional)
      *   - video        (file, required)    — recorded blob
+     *   - label_photo  (file, optional)    — snapshot dari kamera label
      */
     public function store(Request $request): JsonResponse
     {
@@ -93,6 +94,7 @@ class PackingVideoController extends Controller
             'packer_code' => ['nullable', 'string', 'max:32'],
             'recorded_at' => ['nullable', 'date'],
             'video'       => ['required', 'file', "max:{$maxKb}"],
+            'label_photo' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
         ]);
 
         $packer = null;
@@ -118,6 +120,15 @@ class PackingVideoController extends Controller
             'uploaded_at'    => now(),
         ]);
 
+        // Save label photo if provided (from dual webcam setup)
+        if ($request->hasFile('label_photo')) {
+            $labelFile = $request->file('label_photo');
+            $labelExt  = $labelFile->getClientOriginalExtension() ?: 'jpg';
+            $labelPath = sprintf('labels/%s-%s.%s', Str::ulid(), Str::slug($validated['order_id']), $labelExt);
+            $labelFile->storeAs(dirname($labelPath), basename($labelPath), ['disk' => config('video.temp_disk')]);
+            $video->update(['label_path' => $labelPath]);
+        }
+
         // Dispatch FFmpeg work asynchronously so the Packer UI is freed
         // to start the next recording immediately.
         CompressAndUploadVideo::dispatch($video->id);
@@ -141,6 +152,25 @@ class PackingVideoController extends Controller
         } catch (\Exception $e) {
             return response()->json(['message' => 'Video file not found'], 404);
         }
+    }
+
+    /**
+     * GET /api/packing-videos/{id}/label
+     *
+     * Download label photo.
+     */
+    public function label(PackingVideo $packingVideo)
+    {
+        if (! $packingVideo->label_path) {
+            return response()->json(['message' => 'No label photo'], 404);
+        }
+
+        $disk = Storage::disk(config('video.temp_disk'));
+        if (! $disk->exists($packingVideo->label_path)) {
+            return response()->json(['message' => 'Label file not found'], 404);
+        }
+
+        return $disk->response($packingVideo->label_path);
     }
 
     /**

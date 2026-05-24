@@ -18,6 +18,7 @@ class PackingVideo extends Model
         'raw_path',
         'minio_object_key',
         'minio_url',
+        'label_path',
         'mime_type',
         'raw_size_bytes',
         'compressed_size_bytes',

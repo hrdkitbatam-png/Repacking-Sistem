@@ -119,25 +119,42 @@ class CompressAndUploadVideo implements ShouldQueue
     private function runFfmpeg(string $input, string $output, PackingVideo $video): void
     {
         // Build overlay text: timestamp + order ID + packer
-        // Colons in time must be escaped as \: for FFmpeg filter parser
         $ts     = str_replace(':', '\\:', ($video->recorded_at ?? now())->format('Y-m-d H:i:s'));
         $resi   = $video->order_id;
         $packer = optional($video->packer)->code ?? '-';
 
-        // drawtext: timestamp top-left, order|packer below it
-        // Colons in time must be escaped as \: for FFmpeg filter parser
-        $drawText = sprintf(
+        // Base filters: timestamp + order info
+        $drawTextStr = sprintf(
             "drawtext=text='%s':fontsize=22:fontcolor=white:box=1:boxcolor=black@0.5:x=12:y=12," .
             "drawtext=text='%s':fontsize=18:fontcolor=yellow:box=1:boxcolor=black@0.5:x=12:y=42",
             $ts,
             "{$resi} | {$packer}",
         );
 
+        // Label photo overlay (PiP bottom-right corner, shows for 10s)
+        $hasLabel = false;
+        $labelAbs = '';
+        if ($video->label_path) {
+            $labelAbs = Storage::disk(config('video.temp_disk'))->path($video->label_path);
+            $hasLabel = file_exists($labelAbs);
+        }
+
+        if ($hasLabel) {
+            // Full filtergraph with label overlay
+            $filters = sprintf(
+                "[0:v]%s[v1];movie=%s[lab];[v1][lab]overlay=W-w-12:H-h-12:enable='between(t,0,10)'[v2]",
+                $drawTextStr,
+                escapeshellarg($labelAbs),
+            );
+        } else {
+            $filters = $drawTextStr;
+        }
+
         $cmd = [
             config('video.ffmpeg_binary'),
             '-y',
             '-i', $input,
-            '-vf', $drawText,
+            '-vf', $filters,
             '-c:v', 'libx265',
             '-preset', config('video.preset'),
             '-crf', (string) config('video.crf'),

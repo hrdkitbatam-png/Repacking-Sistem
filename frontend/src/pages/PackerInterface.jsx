@@ -26,6 +26,8 @@ const MAX_LOG = 8;
 
 export default function PackerInterface() {
   const videoEl     = useRef(null);
+  const labelEl     = useRef(null);  // second webcam for label photo
+  const labelStream = useRef(null);
   const recorder    = useVideoRecorder();
   const [packers, setPackers] = useState([]);
   const [packerCode, setPackerCode] = useState(
@@ -53,6 +55,51 @@ export default function PackerInterface() {
     if (recorder.ready && videoEl.current && recorder.streamRef.current) {
       videoEl.current.srcObject = recorder.streamRef.current;
     }
+  }, [recorder.ready]);
+
+  // ----- label camera (second webcam for resi photo) -------------------------
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            facingMode: 'environment',
+          },
+          audio: false,
+        });
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        labelStream.current = stream;
+        if (labelEl.current) labelEl.current.srcObject = stream;
+      } catch (e) {
+        console.warn('Label camera unavailable:', e.message);
+      }
+    })();
+    return () => { cancelled = true; labelStream.current?.getTracks().forEach(t => t.stop()); };
+  }, []);
+
+  // Capture snapshot from label camera (called when recording starts)
+  const captureLabel = useCallback(() => {
+    const stream = labelStream.current;
+    if (!stream || !labelEl.current) return null;
+    const canvas = document.createElement('canvas');
+    const video  = labelEl.current;
+    canvas.width  = video.videoWidth || 1920;
+    canvas.height = video.videoHeight || 1080;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+  }, []);
+
+  // Capture when recording begins
+  const labelBlobRef = useRef(null);
+  useEffect(() => {
+    if (machineState === STATE.RECORDING) {
+      captureLabel().then(blob => { if (blob) labelBlobRef.current = blob; });
+    }
+  }, [machineState, captureLabel]);
   }, [recorder.ready, recorder.streamRef]);
 
   // ----- packer list ---------------------------------------------------------
@@ -126,6 +173,7 @@ export default function PackerInterface() {
           packerCode: packerCodeRef.current || undefined,
           blob,
           recordedAt,
+          labelBlob: labelBlobRef.current || undefined,
         });
         pushLog({ kind: "stop", orderId: order.orderId, sizeKb: Math.round(blob.size / 1024) });
         return order.orderId;
