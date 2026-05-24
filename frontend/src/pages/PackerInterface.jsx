@@ -38,6 +38,7 @@ export default function PackerInterface() {
   const [log, setLog] = useState([]); // recent actions
   const [busyMessage, setBusyMessage] = useState(null);
 
+  const [lastFailed, setLastFailed]   = useState(null); // { orderId, blob } for retry
   // Refs so the barcode handler always sees the freshest state without
   // re-binding the global listener.
   const stateRef        = useRef(machineState);
@@ -134,6 +135,7 @@ export default function PackerInterface() {
           orderId: order.orderId,
           message: err?.response?.data?.message || err?.message || "Upload failed",
         });
+        setLastFailed({ orderId: order.orderId, blob, recordedAt });
         return null;
       } finally {
         setBusyMessage(null);
@@ -141,6 +143,31 @@ export default function PackerInterface() {
     },
     [recorder, pushLog],
   );
+
+  const retryUpload = useCallback(async () => {
+    if (!lastFailed) return;
+    const { orderId, blob, recordedAt } = lastFailed;
+    setLastFailed(null);
+    setBusyMessage(`Retrying upload ${orderId}…`);
+    try {
+      await uploadVideo({
+        orderId,
+        packerCode: packerCodeRef.current || undefined,
+        blob,
+        recordedAt,
+      });
+      pushLog({ kind: "stop", orderId, sizeKb: Math.round(blob.size / 1024) });
+    } catch (err) {
+      pushLog({
+        kind: "error",
+        orderId,
+        message: err?.response?.data?.message || err?.message || "Retry failed",
+      });
+      setLastFailed({ orderId, blob, recordedAt });
+    } finally {
+      setBusyMessage(null);
+    }
+  }, [lastFailed, pushLog]);
 
   // ---------------------------------------------------------------------------
   // Barcode handler — implements the PRD state machine
@@ -354,6 +381,23 @@ export default function PackerInterface() {
                 </li>
               ))}
             </ul>
+          )}
+
+          {lastFailed && (
+            <div className="mt-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-red-300 font-semibold">Upload gagal</div>
+                  <div className="text-[11px] text-red-400 font-mono">{lastFailed.orderId}</div>
+                </div>
+                <button
+                  onClick={retryUpload}
+                  className="rounded-md bg-red-600 hover:bg-red-500 px-3 py-1 text-xs font-semibold text-white transition"
+                >
+                  ↻ Retry
+                </button>
+              </div>
+            </div>
           )}
         </div>
 

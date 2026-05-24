@@ -189,6 +189,9 @@ function Row({ row, selected, onSelect }) {
       <td className="px-4 py-3 font-mono text-slate-100">{row.order_id}</td>
       <td className="px-4 py-3">
         <StatusPill status={row.status} label={row.status_label} />
+        {row.status !== 'available' && row.status !== 'failed' && (
+          <PipelineBar status={row.status} />
+        )}
       </td>
       <td className="px-4 py-3 text-slate-300">
         {row.packer ? (
@@ -228,6 +231,40 @@ function StatusPill({ status, label }) {
     >
       {label || status}
     </span>
+  );
+}
+
+// ═══════════════════════════════════════════
+// Pipeline progress bar
+// ═══════════════════════════════════════════
+const PIPELINE_STAGES = [
+  { key: 'uploaded_raw',   label: 'Uploaded',  icon: '⬆️' },
+  { key: 'compressing',    label: 'Compress',  icon: '⚙️' },
+  { key: 'available',      label: 'Ready',     icon: '▶️' },
+];
+
+function PipelineBar({ status }) {
+  if (status === 'failed') {
+    return (
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-red-400 font-semibold">❌ Failed</span>
+      </div>
+    );
+  }
+  const idx = PIPELINE_STAGES.findIndex(s => s.key === status);
+  return (
+    <div className="flex items-center gap-1">
+      {PIPELINE_STAGES.map((stage, i) => (
+        <div key={stage.key} className="flex items-center gap-1">
+          <span className={`text-[10px] ${i <= idx ? 'text-emerald-400' : 'text-slate-600'}`}>
+            {i <= idx ? '●' : '○'}
+          </span>
+          <span className={`text-[10px] ${i <= idx ? 'text-slate-300' : 'text-slate-700'}`}>
+            {stage.label}
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 
