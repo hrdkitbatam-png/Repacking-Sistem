@@ -4,9 +4,17 @@
 
 html, body, #root {
   height: 100%;
+  height: 100dvh;
 }
 
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Safari iOS 100vh fix */
+@supports (height: 100dvh) {
+  html, body, #root {
+    height: 100dvh;
+  }
 }
