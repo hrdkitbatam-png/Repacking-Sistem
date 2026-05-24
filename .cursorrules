@@ -1,0 +1,22 @@
+{
+  "project_rules": {
+    "tech_stack": [
+      "React",
+      "Vite",
+      "TailwindCSS",
+      "Laravel",
+      "PostgreSQL",
+      "MinIO",
+      "FFmpeg"
+    ],
+    "coding_standards": {
+      "frontend": "Use functional components, React hooks, and strict global event listeners for barcode emulation. Avoid heavy UI re-renders.",
+      "backend": "Use Laravel queues/jobs for FFmpeg compression to ensure non-blocking HTTP responses. Implement strict error handling and cleanup for local temporary files.",
+      "database": "Use indexing on Order ID / Resi columns in PostgreSQL for instant CS lookup."
+    },
+    "hardware_integration": {
+      "barcode_scanner": "Scanner inputs act as standard keyboard typing. Implement a debounce/buffer mechanism (e.g., 50ms interval) to capture the full string before 'Enter' is pressed to prevent split inputs."
+    },
+    "storage_policy": "Never store permanent videos on the local server. The local server is strictly a pass-through for FFmpeg processing. Final destination is strictly MinIO."
+  }
+}
