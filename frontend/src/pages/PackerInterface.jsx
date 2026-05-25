@@ -3,6 +3,7 @@ import { useBarcodeScanner } from "../hooks/useBarcodeScanner.js";
 import { useVideoRecorder } from "../hooks/useVideoRecorder.js";
 import { uploadVideo, listPackers } from "../api/client.js";
 import { enqueueUpload, getPendingCount, getAllPending, removeFromQueue } from "../hooks/offlineQueue.js";
+import { useAuth } from "../contexts/AuthContext.jsx";
 
 /* ---------------------------------------------------------------------------
  * State machine
@@ -42,11 +43,17 @@ export default function PackerInterface() {
     ? { deviceId: { exact: mainCameraId }, width: { ideal: 854 }, height: { ideal: 480 }, frameRate: { ideal: 10, max: 15 } }
     : { width: { ideal: 854 }, height: { ideal: 480 }, frameRate: { ideal: 10, max: 15 }, facingMode: 'environment' };
 
+  const { user } = useAuth();
   const recorder    = useVideoRecorder({ videoConstraints: mainConstraints, recordStream: canvasStream.current });
   const [packers, setPackers] = useState([]);
-  const [packerCode, setPackerCode] = useState(
-    () => localStorage.getItem("packer.code") || "",
-  );
+
+  // Auto-set packer code from logged-in user (if packer role)
+  const savedCode = localStorage.getItem("packer.code");
+  const [packerCode, setPackerCode] = useState(() => {
+    if (user?.role === 'packer' && user?.packer_code) return user.packer_code;
+    if (user?.role === 'admin' && savedCode) return savedCode;
+    return '';
+  });
 
   const [machineState, setMachineState] = useState(STATE.IDLE);
   const [currentOrder, setCurrentOrder] = useState(null);
@@ -282,17 +289,19 @@ export default function PackerInterface() {
   useEffect(() => {
     listPackers()
       .then((list) => {
-        // Backend dapat saja down / mengembalikan HTML; jangan crash UI.
         const safe = Array.isArray(list) ? list : [];
         if (!Array.isArray(list)) {
-          // eslint-disable-next-line no-console
-          console.warn(
-            "[PackerInterface] /api/packers tidak mengembalikan array:",
-            list,
-          );
+          console.warn("[PackerInterface] /api/packers tidak mengembalikan array:", list);
         }
         setPackers(safe);
-        if (!packerCode && safe[0]?.code) {
+
+        // Auto-set packer for packer-role users (from their account)
+        if (user?.role === 'packer' && user?.packer_code) {
+          // Already set via useState init, just sync localStorage
+          setPackerCode(user.packer_code);
+          localStorage.setItem("packer.code", user.packer_code);
+        } else if (!packerCode && safe[0]?.code) {
+          // Admin: auto-select first packer if none selected
           setPackerCode(safe[0].code);
           localStorage.setItem("packer.code", safe[0].code);
         }
@@ -637,25 +646,36 @@ export default function PackerInterface() {
           <div className="text-xs uppercase tracking-widest text-slate-400 mb-2">
             Packer
           </div>
-          <select
-            value={packerCode}
-            onChange={(e) => {
-              setPackerCode(e.target.value);
-              localStorage.setItem("packer.code", e.target.value);
-            }}
-            className="w-full rounded-lg bg-slate-800 border border-slate-600 px-3 py-2.5 pr-8 text-sm text-slate-100 
-                       focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50
-                       transition-all duration-200 cursor-pointer appearance-none"
-            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center' }}
-          >
-            <option value="" className="bg-slate-800 text-slate-400">— select packer —</option>
-            {packers.map((p) => (
-              <option key={p.id} value={p.code} className="bg-slate-800 text-slate-100 py-1">
-                {p.code} — {p.name}
-                {p.station ? ` · ${p.station}` : ""}
-              </option>
-            ))}
-          </select>
+
+          {user?.role === 'packer' ? (
+            /* Packer role: auto from account, read-only display */
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+              <span className="text-sm font-mono font-bold text-emerald-400">{user.packer_code || '—'}</span>
+              <span className="text-sm text-slate-400">{user.name}</span>
+            </div>
+          ) : (
+            /* Admin/CS role: manual dropdown */
+            <select
+              value={packerCode}
+              onChange={(e) => {
+                setPackerCode(e.target.value);
+                localStorage.setItem("packer.code", e.target.value);
+              }}
+              className="w-full rounded-lg bg-slate-800 border border-slate-600 px-3 py-2.5 pr-8 text-sm text-slate-100 
+                         focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50
+                         transition-all duration-200 cursor-pointer appearance-none"
+              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center' }}
+            >
+              <option value="" className="bg-slate-800 text-slate-400">— select packer —</option>
+              {packers.map((p) => (
+                <option key={p.id} value={p.code} className="bg-slate-800 text-slate-100 py-1">
+                  {p.code} — {p.name}
+                  {p.station ? ` · ${p.station}` : ""}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Camera Selection */}
