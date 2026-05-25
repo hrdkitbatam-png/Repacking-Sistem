@@ -291,7 +291,8 @@ function PlayerCard({ row }) {
     );
   }
 
-  const streamUrl = `${import.meta.env.VITE_API_BASE_URL}/api/packing-videos/${row.id}/stream`;
+  // Use public MinIO URL directly — bucket is public-read, no auth needed
+  const streamUrl = row.minio_url;
 
   return (
     <>
@@ -302,6 +303,7 @@ function PlayerCard({ row }) {
           autoPlay={false}
           preload="metadata"
           src={streamUrl}
+          crossOrigin="anonymous"
           className="w-full bg-black aspect-video"
         >
           Your browser does not support inline video playback.
@@ -313,14 +315,32 @@ function PlayerCard({ row }) {
 }
 
 function LabelDownload({ row }) {
+  const [blobUrl, setBlobUrl] = useState(null);
+
+  useEffect(() => {
+    if (!row.label_path) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = localStorage.getItem('packer_token');
+        const url = `${import.meta.env.VITE_API_BASE_URL}/api/packing-videos/${row.id}/label`;
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok && !cancelled) {
+          const blob = await res.blob();
+          setBlobUrl(URL.createObjectURL(blob));
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [row.id, row.label_path]);
+
   if (!row.label_path) return null;
-  const labelUrl = `${import.meta.env.VITE_API_BASE_URL}/api/packing-videos/${row.id}/label`;
+
   return (
     <a
-      href={labelUrl}
-      target="_blank"
-      rel="noreferrer"
-      className="mt-2 inline-flex items-center gap-2 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/20 hover:border-blue-400/30 px-4 py-2 text-xs font-semibold text-blue-300 transition-all duration-200"
+      href={blobUrl || '#'}
+      download={`label-${row.order_id}.jpg`}
+      className={`mt-2 inline-flex items-center gap-2 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/20 hover:border-blue-400/30 px-4 py-2 text-xs font-semibold text-blue-300 transition-all duration-200 ${!blobUrl ? 'opacity-50 pointer-events-none' : ''}`}
     >
       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
       Download Label

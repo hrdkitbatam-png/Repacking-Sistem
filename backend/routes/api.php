@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PackerController;
 use App\Http\Controllers\Api\PackingVideoController;
+use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\UserManagementController;
 use Illuminate\Support\Facades\Route;
 
@@ -36,4 +37,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('{user}',    [UserManagementController::class, 'update']);
         Route::delete('{user}', [UserManagementController::class, 'destroy']);
     });
+
+    // Roles management
+    Route::apiResource('roles', RoleController::class);
 });

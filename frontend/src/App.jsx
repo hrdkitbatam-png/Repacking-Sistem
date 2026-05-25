@@ -1,105 +1,53 @@
-import { useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
-import { api, API_BASE_URL } from "./api/client.js";
+import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
+import SidebarLayout from "./layouts/SidebarLayout.jsx";
+import LoginPage from "./pages/LoginPage.jsx";
 import PackerInterface from "./pages/PackerInterface.jsx";
 import CSDashboard from "./pages/CSDashboard.jsx";
+import UsersPage from "./pages/UsersPage.jsx";
+import PackersPage from "./pages/PackersPage.jsx";
+import RolesPage from "./pages/RolesPage.jsx";
 
-function useBackendHealth(intervalMs = 5000) {
-  const [status, setStatus] = useState("checking"); // checking | online | offline
-  useEffect(() => {
-    let mounted = true;
-    const ping = async () => {
-      try {
-        await api.get("/health", { timeout: 3000 });
-        if (mounted) setStatus("online");
-      } catch {
-        if (mounted) setStatus("offline");
-      }
-    };
-    ping();
-    const id = setInterval(ping, intervalMs);
-    return () => {
-      mounted = false;
-      clearInterval(id);
-    };
-  }, [intervalMs]);
-  return status;
+function ProtectedRoute({ children }) {
+  const { token, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <div className="text-center">
+          <div className="inline-flex h-14 w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 items-center justify-center text-white font-black text-xl mb-3 shadow-lg shadow-emerald-500/20">
+            P
+          </div>
+          <svg className="animate-spin h-8 w-8 text-emerald-400 mx-auto" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <p className="text-sm text-slate-500 mt-3">Memuat...</p>
+        </div>
+      </div>
+    );
+  }
+  if (!token) return <Navigate to="/login" replace />;
+  return <SidebarLayout>{children}</SidebarLayout>;
 }
 
-function TopBar() {
-  const link =
-    "px-3 py-1.5 rounded-md text-sm font-medium transition-colors";
-  const active = "bg-slate-100 text-slate-900";
-  const idle = "text-slate-300 hover:bg-slate-800";
-  const health = useBackendHealth();
-
-  const dot =
-    health === "online"
-      ? "bg-emerald-400"
-      : health === "offline"
-      ? "bg-red-500 animate-pulse"
-      : "bg-amber-400 animate-pulse";
-
-  const label =
-    health === "online"
-      ? `API online · ${API_BASE_URL}`
-      : health === "offline"
-      ? `API OFFLINE · jalankan: php artisan serve (port 8000)`
-      : "Memeriksa API…";
-
-  return (
-    <header className="flex items-center justify-between border-b border-border bg-panel px-6 py-3">
-      <div className="flex items-center gap-3">
-        <div className="h-8 w-8 rounded bg-emerald-500/20 flex items-center justify-center text-emerald-300 font-bold">
-          P
-        </div>
-        <div>
-          <div className="text-sm font-semibold tracking-wide">PACKER SISTEM</div>
-          <div className="text-[11px] text-slate-400">
-            Hands-free packaging video pipeline
-          </div>
-        </div>
-      </div>
-      <div className="flex items-center gap-4">
-        <div
-          className={`flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-[11px] ${
-            health === "offline" ? "text-red-300" : "text-slate-300"
-          }`}
-          title={label}
-        >
-          <span className={`h-2 w-2 rounded-full ${dot}`} />
-          {label}
-        </div>
-        <nav className="flex items-center gap-2">
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) => `${link} ${isActive ? active : idle}`}
-          >
-            Packer Interface
-          </NavLink>
-          <NavLink
-            to="/dashboard"
-            className={({ isActive }) => `${link} ${isActive ? active : idle}`}
-          >
-            CS Dashboard
-          </NavLink>
-        </nav>
-      </div>
-    </header>
-  );
+function AdminOnly({ children }) {
+  const { user } = useAuth();
+  if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  return children;
 }
 
 function RouteBoundary() {
-  // ErrorBoundary needs to be re-mounted per route, otherwise an error caught
-  // on /packer will persist when the user navigates to /dashboard.
   const location = useLocation();
   return (
     <ErrorBoundary key={location.pathname}>
       <Routes>
-        <Route path="/" element={<PackerInterface />} />
-        <Route path="/dashboard" element={<CSDashboard />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<ProtectedRoute><PackerInterface /></ProtectedRoute>} />
+        <Route path="/dashboard" element={<ProtectedRoute><CSDashboard /></ProtectedRoute>} />
+        <Route path="/packers" element={<ProtectedRoute><AdminOnly><PackersPage /></AdminOnly></ProtectedRoute>} />
+        <Route path="/users" element={<ProtectedRoute><AdminOnly><UsersPage /></AdminOnly></ProtectedRoute>} />
+        <Route path="/roles" element={<ProtectedRoute><AdminOnly><RolesPage /></AdminOnly></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </ErrorBoundary>
@@ -108,11 +56,12 @@ function RouteBoundary() {
 
 export default function App() {
   return (
-    <div className="flex h-full flex-col">
-      <TopBar />
-      <main className="flex-1 min-h-0">
-        <RouteBoundary />
-      </main>
-    </div>
+    <AuthProvider>
+      <div className="flex h-full flex-col bg-slate-950 text-white">
+        <main className="flex-1 min-h-0">
+          <RouteBoundary />
+        </main>
+      </div>
+    </AuthProvider>
   );
 }

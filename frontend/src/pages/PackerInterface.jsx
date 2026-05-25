@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useBarcodeScanner } from "../hooks/useBarcodeScanner.js";
 import { useVideoRecorder } from "../hooks/useVideoRecorder.js";
 import { uploadVideo, listPackers } from "../api/client.js";
+import { enqueueUpload, getPendingCount, getAllPending, removeFromQueue } from "../hooks/offlineQueue.js";
 
 /* ---------------------------------------------------------------------------
  * State machine
@@ -26,9 +27,22 @@ const MAX_LOG = 8;
 
 export default function PackerInterface() {
   const videoEl     = useRef(null);
-  const labelEl     = useRef(null);  // second webcam for label photo
+  const labelEl     = useRef(null);  // second webcam preview
   const labelStream = useRef(null);
-  const recorder    = useVideoRecorder();
+  const compositeCanvas = useRef(null); // hidden canvas for PiP compositing
+  const canvasStream  = useRef(null);   // canvas.captureStream() output
+
+  // ---- camera selection state ----
+  const [cameras, setCameras] = useState([]);
+  const [mainCameraId, setMainCameraId] = useState(null);
+  const [labelCameraId, setLabelCameraId] = useState(null);
+
+  // Build constraints from selected deviceId
+  const mainConstraints = mainCameraId
+    ? { deviceId: { exact: mainCameraId }, width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 10, max: 15 } }
+    : { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 10, max: 15 }, facingMode: 'environment' };
+
+  const recorder    = useVideoRecorder({ videoConstraints: mainConstraints, recordStream: canvasStream.current });
   const [packers, setPackers] = useState([]);
   const [packerCode, setPackerCode] = useState(
     () => localStorage.getItem("packer.code") || "",
@@ -57,49 +71,198 @@ export default function PackerInterface() {
     }
   }, [recorder.ready]);
 
+  // ----- enumerate video devices (after main camera is ready) -----------------
+  useEffect(() => {
+    if (!recorder.ready) return;
+    (async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices
+          .filter(d => d.kind === 'videoinput' && d.deviceId)
+          .map(d => ({ deviceId: d.deviceId, label: d.label || `Camera ${d.deviceId.slice(0, 8)}` }));
+
+        setCameras(videoDevices);
+
+        // Auto-detect main camera from current active track
+        const mainTrack = recorder.streamRef.current?.getVideoTracks()[0];
+        const currentId = mainTrack?.getSettings()?.deviceId;
+        if (currentId && !mainCameraId) {
+          setMainCameraId(currentId);
+        }
+
+        // Auto-pick label camera: first DIFFERENT device
+        if (!labelCameraId && videoDevices.length >= 2) {
+          const labelDevice = videoDevices.find(d => d.deviceId !== currentId);
+          if (labelDevice) setLabelCameraId(labelDevice.deviceId);
+        } else if (!labelCameraId && videoDevices.length === 1) {
+          setLabelCameraId(videoDevices[0].deviceId);
+        }
+
+        console.log(`[DualCam] ${videoDevices.length} cameras found`);
+      } catch (e) {
+        console.warn('[DualCam] enumerate failed:', e.message);
+      }
+    })();
+  }, [recorder.ready]);
+
   // ----- label camera (second webcam for resi photo) -------------------------
+  // Re-acquires whenever labelCameraId changes
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-            facingMode: 'environment',
-          },
-          audio: false,
-        });
-        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
-        labelStream.current = stream;
-        if (labelEl.current) labelEl.current.srcObject = stream;
+        // Release old label stream if any
+        const old = labelStream.current;
+        if (old) {
+          old.getTracks().forEach(t => t.stop());
+          labelStream.current = null;
+        }
+
+        // Build constraints based on selected label camera (640x360)
+        // Use a DIFFERENT deviceId from main camera to avoid conflict
+        const labelConstraints = labelCameraId
+          ? {
+              video: {
+                deviceId: { exact: labelCameraId },
+                width: { ideal: 640 },
+                height: { ideal: 360 },
+              },
+              audio: false,
+            }
+          : {
+              video: {
+                width: { ideal: 640 },
+                height: { ideal: 360 },
+              },
+              audio: false,
+            };
+
+        if (cancelled) return;
+
+        // Add 8-second timeout to avoid hanging if camera is busy
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(labelConstraints);
+          clearTimeout(timeoutId);
+
+          if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+          labelStream.current = stream;
+          if (labelEl.current) {
+            labelEl.current.srcObject = stream;
+            labelEl.current.classList.remove('hidden');
+          }
+          const track = stream.getVideoTracks()[0];
+          console.log(`[LabelCam] Active: ${track?.label || 'unknown'}`);
+        } catch (innerErr) {
+          clearTimeout(timeoutId);
+          if (innerErr.name === 'AbortError') {
+            console.warn('Label camera timed out — may be in use by main camera');
+          } else {
+            throw innerErr;
+          }
+          // Fallback: hide label PiP if only 1 camera
+          if (labelEl.current) labelEl.current.classList.add('hidden');
+        }
       } catch (e) {
         console.warn('Label camera unavailable:', e.message);
       }
     })();
-    return () => { cancelled = true; labelStream.current?.getTracks().forEach(t => t.stop()); };
-  }, []);
+    return () => { cancelled = true; };
+  }, [labelCameraId]);
 
-  // Capture snapshot from label camera (called when recording starts)
-  const captureLabel = useCallback(() => {
-    const stream = labelStream.current;
-    if (!stream || !labelEl.current) return null;
-    const canvas = document.createElement('canvas');
-    const video  = labelEl.current;
-    canvas.width  = video.videoWidth || 1920;
-    canvas.height = video.videoHeight || 1080;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
-  }, []);
-
-  // Capture when recording begins
-  const labelBlobRef = useRef(null);
+  // ----- Canvas compositing: main cam + label PiP + timestamp ------------
+  // Starts as soon as both cameras are ready (not waiting for recording)
   useEffect(() => {
-    if (machineState === STATE.RECORDING) {
-      captureLabel().then(blob => { if (blob) labelBlobRef.current = blob; });
-    }
-  }, [machineState, captureLabel]);
+    if (!recorder.ready || !recorder.streamRef.current) return;
+
+    const canvas = compositeCanvas.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const mainVideo = videoEl.current;
+    let animId;
+    let streamStarted = false;
+
+    const draw = () => {
+      if (!mainVideo || mainVideo.readyState < 2) { animId = requestAnimationFrame(draw); return; }
+
+      const mw = mainVideo.videoWidth || 640;
+      const mh = mainVideo.videoHeight || 360;
+      if (canvas.width !== mw) canvas.width = mw;
+      if (canvas.height !== mh) canvas.height = mh;
+
+      // Draw main camera
+      ctx.drawImage(mainVideo, 0, 0, mw, mh);
+
+      // Draw label camera PiP (bottom-right, 180px wide)
+      const labelVideo = labelEl.current;
+      if (labelVideo && labelVideo.readyState >= 2) {
+        const pipW = 180;
+        const pipH = (labelVideo.videoHeight / labelVideo.videoWidth) * pipW || 120;
+        const x = mw - pipW - 12;
+        const y = mh - pipH - 12;
+        ctx.save();
+        ctx.beginPath();
+        const r = 8;
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + pipW - r, y);
+        ctx.quadraticCurveTo(x + pipW, y, x + pipW, y + r);
+        ctx.lineTo(x + pipW, y + pipH - r);
+        ctx.quadraticCurveTo(x + pipW, y + pipH, x + pipW - r, y + pipH);
+        ctx.lineTo(x + r, y + pipH);
+        ctx.quadraticCurveTo(x, y + pipH, x, y + pipH - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(labelVideo, x, y, pipW, pipH);
+        ctx.strokeStyle = 'rgba(52, 211, 153, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(x, y - 16, 65, 16);
+        ctx.fillStyle = '#6ee7b7';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText('LABEL', x + 4, y - 4);
+      }
+
+      // Draw timestamp (top-left, WIB)
+      const now = new Date();
+      const ts = now.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', hour12: false });
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(8, 6, 230, 28);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 16px monospace';
+      ctx.fillText(ts, 14, 26);
+
+      // Draw order ID + packer (yellow, below timestamp)
+      const orderId = currentOrderRef.current?.orderId || '-';
+      const pkrCode = packerCodeRef.current || '-';
+      const label = `${orderId} | ${pkrCode}`;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(8, 36, 230, 22);
+      ctx.fillStyle = '#facc15';
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText(label, 14, 53);
+
+      // Start canvas stream on first frame
+      if (!streamStarted && !canvasStream.current) {
+        canvasStream.current = canvas.captureStream(10);
+        streamStarted = true;
+      }
+
+      animId = requestAnimationFrame(draw);
+    };
+
+    animId = requestAnimationFrame(draw);
+
+    return () => {
+      if (animId) cancelAnimationFrame(animId);
+    };
+  }, [recorder.ready]);
 
   // ----- packer list ---------------------------------------------------------
   useEffect(() => {
@@ -142,7 +305,8 @@ export default function PackerInterface() {
     (orderId) => {
       const ok = recorder.start();
       if (!ok) {
-        pushLog({ kind: "error", message: `Cannot start recording for ${orderId}` });
+        const reason = recorder.error || (!recorder.ready ? 'Camera not ready' : 'Already recording');
+        pushLog({ kind: "error", message: `Cannot record ${orderId}: ${reason}` });
         return false;
       }
       setCurrentOrder({ orderId, startedAt: new Date() });
@@ -172,17 +336,33 @@ export default function PackerInterface() {
           packerCode: packerCodeRef.current || undefined,
           blob,
           recordedAt,
-          labelBlob: labelBlobRef.current || undefined,
         });
         pushLog({ kind: "stop", orderId: order.orderId, sizeKb: Math.round(blob.size / 1024) });
         return order.orderId;
       } catch (err) {
-        pushLog({
-          kind:    "error",
-          orderId: order.orderId,
-          message: err?.response?.data?.message || err?.message || "Upload failed",
-        });
-        setLastFailed({ orderId: order.orderId, blob, recordedAt });
+        // Network error → save to offline queue
+        const isNetworkError = !err?.response && (err?.message?.includes('Network') || err?.message?.includes('timeout') || err?.code === 'ERR_NETWORK');
+        if (isNetworkError) {
+          await enqueueUpload({
+            orderId: order.orderId,
+            packerCode: packerCodeRef.current || undefined,
+            blob,
+            recordedAt,
+          });
+          const pending = await getPendingCount();
+          pushLog({
+            kind: "error",
+            orderId: order.orderId,
+            message: `Offline — saved locally (${pending} pending)`,
+          });
+        } else {
+          pushLog({
+            kind: "error",
+            orderId: order.orderId,
+            message: err?.response?.data?.message || err?.message || "Upload failed",
+          });
+          setLastFailed({ orderId: order.orderId, blob, recordedAt });
+        }
         return null;
       } finally {
         setBusyMessage(null);
@@ -190,6 +370,57 @@ export default function PackerInterface() {
     },
     [recorder, pushLog],
   );
+
+  // ----- Auto-retry offline queue when back online -------------------------
+  const [offlineCount, setOfflineCount] = useState(0);
+
+  useEffect(() => {
+    getPendingCount().then(setOfflineCount);
+  }, []);
+
+  useEffect(() => {
+    const processQueue = async () => {
+      const items = await getAllPending();
+      if (items.length === 0) return;
+
+      pushLog({ kind: "start", orderId: `Retrying ${items.length} offline uploads…` });
+      setBusyMessage(`Uploading ${items.length} pending…`);
+
+      for (const item of items) {
+        try {
+          await uploadVideo({
+            orderId: item.orderId,
+            packerCode: item.packerCode || undefined,
+            blob: item.blob,
+            recordedAt: item.recordedAt,
+          });
+          await removeFromQueue(item.id);
+          pushLog({ kind: "stop", orderId: item.orderId, sizeKb: Math.round((item.blob?.size || 0) / 1024) });
+        } catch (err) {
+          // Still offline — stop retrying
+          if (!err?.response) break;
+          pushLog({ kind: "error", orderId: item.orderId, message: 'Upload still failing' });
+        }
+      }
+
+      const remaining = await getPendingCount();
+      setOfflineCount(remaining);
+      setBusyMessage(null);
+      if (remaining === 0) {
+        pushLog({ kind: "stop", orderId: 'All offline uploads complete' });
+      }
+    };
+
+    const handleOnline = () => { processQueue(); };
+    window.addEventListener('online', handleOnline);
+
+    // Also try on mount (if already online)
+    if (navigator.onLine) {
+      processQueue();
+    }
+
+    return () => window.removeEventListener('online', handleOnline);
+  }, [pushLog]);
 
   const retryUpload = useCallback(async () => {
     if (!lastFailed) return;
@@ -270,7 +501,7 @@ export default function PackerInterface() {
 
   useBarcodeScanner(handleScan, {
     interKeyTimeoutMs: 50,
-    minLength: 3,
+    minLength: 5,
     alwaysCapture: true,
     enabled: recorder.ready,
   });
@@ -311,6 +542,9 @@ export default function PackerInterface() {
         </div>
 
         <div className="relative flex-1 min-h-0 flex items-center justify-center overflow-hidden">
+          {/* Hidden canvas for PiP compositing */}
+          <canvas ref={compositeCanvas} className="hidden" />
+          {/* Main camera */}
           <video
             ref={videoEl}
             autoPlay
@@ -318,6 +552,21 @@ export default function PackerInterface() {
             muted
             className="h-full w-full object-contain bg-black"
           />
+
+          {/* Label camera PiP — bottom-right corner */}
+          <video
+            ref={labelEl}
+            autoPlay
+            playsInline
+            muted
+            className="absolute bottom-3 right-3 w-[180px] h-[120px] rounded-lg border-2 border-emerald-500/50 object-cover shadow-lg shadow-emerald-500/20 bg-black hidden"
+            onLoadedMetadata={(e) => { e.target.classList.remove('hidden'); }}
+          />
+
+          {/* Label camera indicator */}
+          <div className="absolute bottom-3 right-[192px] px-2 py-1 rounded bg-black/70 text-[10px] text-emerald-400 font-bold border border-emerald-500/30">
+            📸 LABEL CAM
+          </div>
           {!recorder.ready && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-center">
               <div>
@@ -380,18 +629,70 @@ export default function PackerInterface() {
               setPackerCode(e.target.value);
               localStorage.setItem("packer.code", e.target.value);
             }}
-            className="w-full rounded-lg bg-white/[0.04] border border-white/[0.08] px-3 py-2.5 text-sm text-white
-                       focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/30
-                       transition-all duration-200"
+            className="w-full rounded-lg bg-slate-800 border border-slate-600 px-3 py-2.5 pr-8 text-sm text-slate-100 
+                       focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50
+                       transition-all duration-200 cursor-pointer appearance-none"
+            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center' }}
           >
-            <option value="">— select packer —</option>
+            <option value="" className="bg-slate-800 text-slate-400">— select packer —</option>
             {packers.map((p) => (
-              <option key={p.id} value={p.code}>
+              <option key={p.id} value={p.code} className="bg-slate-800 text-slate-100 py-1">
                 {p.code} — {p.name}
                 {p.station ? ` · ${p.station}` : ""}
               </option>
             ))}
           </select>
+        </div>
+
+        {/* Camera Selection */}
+        <div className="p-5 border-b border-border">
+          <div className="text-xs uppercase tracking-widest text-slate-400 mb-3">
+            Cameras
+          </div>
+
+          <label className="text-[10px] font-semibold text-slate-400 uppercase mb-1 block">
+            🎥 Main Camera
+          </label>
+          <select
+            value={mainCameraId || ''}
+            onChange={(e) => setMainCameraId(e.target.value || null)}
+            className="w-full rounded-lg bg-slate-800 border border-slate-600 px-3 py-2 pr-8 text-sm text-slate-100 mb-3
+                       focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
+                       transition-all duration-200 cursor-pointer appearance-none"
+            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center' }}
+          >
+            {cameras.length === 0 && <option value="" className="bg-slate-800 text-slate-400">Detecting cameras…</option>}
+            {cameras.map((c) => (
+              <option key={c.deviceId} value={c.deviceId} className="bg-slate-800 text-slate-100 py-1">
+                {c.label}
+              </option>
+            ))}
+          </select>
+
+          <label className="text-[10px] font-semibold text-slate-400 uppercase mb-1 block">
+            📸 Label Camera
+          </label>
+          <select
+            value={labelCameraId || ''}
+            onChange={(e) => setLabelCameraId(e.target.value || null)}
+            className="w-full rounded-lg bg-slate-800 border border-slate-600 px-3 py-2 pr-8 text-sm text-slate-100
+                       focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50
+                       transition-all duration-200 cursor-pointer appearance-none"
+            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center' }}
+          >
+            {cameras.length === 0 && <option value="" className="bg-slate-800 text-slate-400">Detecting cameras…</option>}
+            {cameras.map((c) => (
+              <option key={c.deviceId} value={c.deviceId} className="bg-slate-800 text-slate-100 py-1">
+                {c.label}
+              </option>
+            ))}
+          </select>
+
+          <p className="text-[10px] text-slate-500 mt-2">
+            {cameras.length === 0 && 'Plug in USB cameras & refresh.'}
+            {cameras.length === 1 && '⚠ Only 1 camera found. Label uses same.'}
+            {cameras.length >= 2 && `✅ ${cameras.length} cameras detected. Pick different for label.`}
+          </p>
         </div>
 
         <div className="p-5 border-b border-border">
@@ -438,10 +739,24 @@ export default function PackerInterface() {
                 </div>
                 <button
                   onClick={retryUpload}
-                  className="rounded-lg bg-red-600 hover:bg-red-500 active:scale-95 px-3.5 py-1.5 text-xs font-bold transition-all shadow-lg shadow-red-600/20 text-white transition"
+                  className="rounded-lg bg-red-600 hover:bg-red-500 active:scale-95 px-3.5 py-1.5 text-xs font-bold transition-all shadow-lg shadow-red-600/20 text-white"
                 >
                   ↻ Retry
                 </button>
+              </div>
+            </div>
+          )}
+
+          {offlineCount > 0 && (
+            <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-xs text-amber-300 font-semibold">
+                  {offlineCount} video{offlineCount > 1 ? 's' : ''} waiting for internet
+                </span>
+              </div>
+              <div className="text-[10px] text-amber-400/70 mt-1">
+                Will auto-upload when connection is restored
               </div>
             </div>
           )}

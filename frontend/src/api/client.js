@@ -12,6 +12,15 @@ export const api = axios.create({
   timeout: 120_000,
 });
 
+// Auto-attach auth token from localStorage
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('packer_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 // Tolak response yang bukan JSON (mis. HTML error page) agar caller dapat
 // pesan error yang jelas alih-alih nilai "string" yang nanti crash di `.map`.
 api.interceptors.response.use(
