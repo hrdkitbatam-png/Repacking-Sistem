@@ -49,8 +49,8 @@ export function useVideoRecorder({
           throw new Error("MediaRecorder tidak didukung.");
         }
         const constraints = constraintsRef.current ?? {
-          width:  { ideal: 640 },
-          height: { ideal: 360 },
+          width:  { ideal: 854 },
+          height: { ideal: 480 },
           frameRate: { ideal: 10, max: 15 },
           facingMode: "environment",
         };
@@ -108,7 +108,7 @@ export function useVideoRecorder({
     const mimeType = pickMimeType();
     const rec = new MediaRecorder(source, {
       mimeType: mimeType || undefined,
-      videoBitsPerSecond: 200_000, // 200 kbps — 360p optimized
+      videoBitsPerSecond: 200_000, // 200 kbps — 480p
     });
     rec.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) chunksRef.current.push(e.data);

@@ -39,8 +39,8 @@ export default function PackerInterface() {
 
   // Build constraints from selected deviceId
   const mainConstraints = mainCameraId
-    ? { deviceId: { exact: mainCameraId }, width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 10, max: 15 } }
-    : { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 10, max: 15 }, facingMode: 'environment' };
+    ? { deviceId: { exact: mainCameraId }, width: { ideal: 854 }, height: { ideal: 480 }, frameRate: { ideal: 10, max: 15 } }
+    : { width: { ideal: 854 }, height: { ideal: 480 }, frameRate: { ideal: 10, max: 15 }, facingMode: 'environment' };
 
   const recorder    = useVideoRecorder({ videoConstraints: mainConstraints, recordStream: canvasStream.current });
   const [packers, setPackers] = useState([]);
@@ -124,15 +124,15 @@ export default function PackerInterface() {
           ? {
               video: {
                 deviceId: { exact: labelCameraId },
-                width: { ideal: 640 },
-                height: { ideal: 360 },
+                width: { ideal: 854 },
+                height: { ideal: 480 },
               },
               audio: false,
             }
           : {
               video: {
-                width: { ideal: 640 },
-                height: { ideal: 360 },
+                width: { ideal: 854 },
+                height: { ideal: 480 },
               },
               audio: false,
             };
@@ -173,7 +173,7 @@ export default function PackerInterface() {
   }, [labelCameraId]);
 
   // ----- Canvas compositing: main cam + label PiP + timestamp ------------
-  // Starts as soon as both cameras are ready (not waiting for recording)
+  // Uses setInterval (15fps) instead of rAF — reliable even in background tab
   useEffect(() => {
     if (!recorder.ready || !recorder.streamRef.current) return;
 
@@ -182,16 +182,24 @@ export default function PackerInterface() {
 
     const ctx = canvas.getContext('2d');
     const mainVideo = videoEl.current;
-    let animId;
-    let streamStarted = false;
+    let intervalId;
+    let frameN = 0;
 
     const draw = () => {
-      if (!mainVideo || mainVideo.readyState < 2) { animId = requestAnimationFrame(draw); return; }
+      if (!mainVideo || mainVideo.readyState < 2) return;
 
-      const mw = mainVideo.videoWidth || 640;
-      const mh = mainVideo.videoHeight || 360;
-      if (canvas.width !== mw) canvas.width = mw;
-      if (canvas.height !== mh) canvas.height = mh;
+      const mw = mainVideo.videoWidth || 854;
+      const mh = mainVideo.videoHeight || 480;
+
+      // Fix canvas size once (avoids resize during recording)
+      if (canvas.width !== mw || canvas.height !== mh) {
+        canvas.width = mw;
+        canvas.height = mh;
+      }
+
+      // Clear with black background
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, mw, mh);
 
       // Draw main camera
       ctx.drawImage(mainVideo, 0, 0, mw, mh);
@@ -200,40 +208,40 @@ export default function PackerInterface() {
       const labelVideo = labelEl.current;
       if (labelVideo && labelVideo.readyState >= 2) {
         const pipW = 180;
-        const pipH = (labelVideo.videoHeight / labelVideo.videoWidth) * pipW || 120;
-        const x = mw - pipW - 12;
-        const y = mh - pipH - 12;
+        const pipH = Math.round((labelVideo.videoHeight / labelVideo.videoWidth) * pipW) || 120;
+        const px = mw - pipW - 12;
+        const py = mh - pipH - 12;
         ctx.save();
         ctx.beginPath();
         const r = 8;
-        ctx.moveTo(x + r, y);
-        ctx.lineTo(x + pipW - r, y);
-        ctx.quadraticCurveTo(x + pipW, y, x + pipW, y + r);
-        ctx.lineTo(x + pipW, y + pipH - r);
-        ctx.quadraticCurveTo(x + pipW, y + pipH, x + pipW - r, y + pipH);
-        ctx.lineTo(x + r, y + pipH);
-        ctx.quadraticCurveTo(x, y + pipH, x, y + pipH - r);
-        ctx.lineTo(x, y + r);
-        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.moveTo(px + r, py);
+        ctx.lineTo(px + pipW - r, py);
+        ctx.quadraticCurveTo(px + pipW, py, px + pipW, py + r);
+        ctx.lineTo(px + pipW, py + pipH - r);
+        ctx.quadraticCurveTo(px + pipW, py + pipH, px + pipW - r, py + pipH);
+        ctx.lineTo(px + r, py + pipH);
+        ctx.quadraticCurveTo(px, py + pipH, px, py + pipH - r);
+        ctx.lineTo(px, py + r);
+        ctx.quadraticCurveTo(px, py, px + r, py);
         ctx.closePath();
         ctx.clip();
-        ctx.drawImage(labelVideo, x, y, pipW, pipH);
+        ctx.drawImage(labelVideo, px, py, pipW, pipH);
         ctx.strokeStyle = 'rgba(52, 211, 153, 0.6)';
         ctx.lineWidth = 2;
         ctx.stroke();
         ctx.restore();
         ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillRect(x, y - 16, 65, 16);
+        ctx.fillRect(px, py - 16, 65, 16);
         ctx.fillStyle = '#6ee7b7';
         ctx.font = 'bold 9px monospace';
-        ctx.fillText('LABEL', x + 4, y - 4);
+        ctx.fillText('LABEL', px + 4, py - 4);
       }
 
-      // Draw timestamp (top-left, WIB)
+      // Draw timestamp (top-left, WIB) — includes milliseconds for frame uniqueness
       const now = new Date();
       const ts = now.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', hour12: false });
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(8, 6, 230, 28);
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(8, 6, 270, 54);
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 16px monospace';
       ctx.fillText(ts, 14, 26);
@@ -241,26 +249,32 @@ export default function PackerInterface() {
       // Draw order ID + packer (yellow, below timestamp)
       const orderId = currentOrderRef.current?.orderId || '-';
       const pkrCode = packerCodeRef.current || '-';
-      const label = `${orderId} | ${pkrCode}`;
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(8, 36, 230, 22);
       ctx.fillStyle = '#facc15';
       ctx.font = 'bold 14px monospace';
-      ctx.fillText(label, 14, 53);
+      ctx.fillText(`${orderId} | ${pkrCode}`, 14, 48);
+
+      // Anti-optimize: tiny frame counter dot (forces browser to encode EVERY frame)
+      frameN++;
+      ctx.fillStyle = frameN % 2 === 0 ? '#001100' : '#001101';
+      ctx.fillRect(mw - 2, mh - 2, 2, 2);
 
       // Start canvas stream on first frame
-      if (!streamStarted && !canvasStream.current) {
-        canvasStream.current = canvas.captureStream(10);
-        streamStarted = true;
+      if (!canvasStream.current) {
+        canvasStream.current = canvas.captureStream(15);
       }
 
-      animId = requestAnimationFrame(draw);
+      // If recording, force a new frame by touching the stream track
+      const track = canvasStream.current?.getVideoTracks()[0];
+      if (track && recorder.isRecording) {
+        track.requestFrame?.();
+      }
     };
 
-    animId = requestAnimationFrame(draw);
+    // Use setInterval instead of rAF — survives background tab
+    intervalId = setInterval(draw, 66); // ~15fps
 
     return () => {
-      if (animId) cancelAnimationFrame(animId);
+      if (intervalId) clearInterval(intervalId);
     };
   }, [recorder.ready]);
 
