@@ -174,6 +174,36 @@ class PackingVideoController extends Controller
     }
 
     /**
+     * POST /api/packing-videos/{id}/retry
+     *
+     * Re-dispatches the compression job for a failed video.
+     */
+    public function retry(PackingVideo $packingVideo): JsonResponse
+    {
+        if (!in_array($packingVideo->status, [VideoStatus::Failed, VideoStatus::UploadedRaw])) {
+            return response()->json(['message' => 'Only failed or pending videos can be retried'], 422);
+        }
+
+        if (!$packingVideo->raw_path) {
+            return response()->json(['message' => 'No raw file to retry'], 422);
+        }
+
+        $disk = Storage::disk(config('video.temp_disk'));
+        if (!$disk->exists($packingVideo->raw_path)) {
+            return response()->json(['message' => 'Raw file no longer exists'], 404);
+        }
+
+        $packingVideo->update([
+            'status'        => VideoStatus::UploadedRaw,
+            'error_message' => null,
+        ]);
+
+        \App\Jobs\CompressAndUploadVideo::dispatch($packingVideo->id);
+
+        return response()->json(['message' => 'Compression retry dispatched', 'status' => 'uploaded_raw']);
+    }
+
+    /**
      * DELETE /api/packing-videos/{id}
      * (Optional, but useful for the dashboard's "remove" flow.)
      */

@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\PackerController;
 use App\Http\Controllers\Api\PackingVideoController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\UserManagementController;
+use App\Http\Controllers\Api\StorageController;
 use Illuminate\Support\Facades\Route;
 
 // Public
@@ -23,6 +24,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('by-order/{orderId}', [PackingVideoController::class, 'byOrder']);
         Route::get('{packingVideo}/stream', [PackingVideoController::class, 'stream']);
         Route::get('{packingVideo}/label',  [PackingVideoController::class, 'label']);
+        Route::post('{packingVideo}/retry', [PackingVideoController::class, 'retry']);
         Route::get('{packingVideo}',     [PackingVideoController::class, 'show']);
         Route::delete('{packingVideo}',  [PackingVideoController::class, 'destroy']);
     });
@@ -40,4 +42,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Roles management
     Route::apiResource('roles', RoleController::class);
+
+    // Storage status
+    Route::get('storage/status', [StorageController::class, 'status']);
 });

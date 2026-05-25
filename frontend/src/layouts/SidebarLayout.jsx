@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { api } from '../api/client.js';
 
 const NAV_ITEMS = [
   { path: '/', label: 'Packer Interface', icon: 'M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z', roles: ['admin', 'packer'] },
@@ -16,12 +17,19 @@ const SETTING_ITEMS = [
 export default function SidebarLayout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [storage, setStorage] = useState(null);
   const profileRef = useRef(null);
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
   const role = user?.role || 'packer';
+
+  // Fetch storage info for admin
+  useEffect(() => {
+    if (user?.role !== 'admin') return;
+    api.get('/storage/status').then(r => setStorage(r.data)).catch(() => {});
+  }, [user]);
 
   const filteredNav = NAV_ITEMS.filter((i) => i.roles.includes(role));
   const filteredSettings = SETTING_ITEMS.filter((i) => i.roles.includes(role));
@@ -128,6 +136,25 @@ export default function SidebarLayout({ children }) {
                             </Link>
                           );
                         })}
+                      </div>
+                    )}
+
+                    {/* Storage bar (admin only) */}
+                    {storage && (
+                      <div className="border-t border-slate-700/50 px-4 py-2.5">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] text-slate-500 uppercase">Storage</span>
+                          <span className="text-[10px] text-slate-400">{storage.disk.used_gb} / {storage.disk.total_gb} GB</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${storage.disk.percent_used > 80 ? 'bg-rose-500' : storage.disk.percent_used > 60 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                            style={{ width: `${Math.min(storage.disk.percent_used, 100)}%` }}
+                          />
+                        </div>
+                        <div className="text-[9px] text-slate-600 mt-1">
+                          {storage.database.video_count} videos · {storage.retention_days}d retention
+                        </div>
                       </div>
                     )}
 

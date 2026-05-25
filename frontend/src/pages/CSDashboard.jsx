@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listVideos } from "../api/client.js";
+import { listVideos, api } from "../api/client.js";
 
 const PER_PAGE = 25;
 
@@ -287,6 +287,9 @@ function PlayerCard({ row }) {
             ? row.error_message || "Processing failed."
             : "Video is still being processed…"}
         </span>
+        {row.status === "failed" && (
+          <RetryButton videoId={row.id} />
+        )}
       </div>
     );
   }
@@ -345,6 +348,30 @@ function LabelDownload({ row }) {
       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
       Download Label
     </a>
+  );
+}
+
+function RetryButton({ videoId }) {
+  const [retrying, setRetrying] = useState(false);
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    try {
+      await api.post(`/packing-videos/${videoId}/retry`);
+    } catch {}
+    setRetrying(false);
+    // Refresh page to show updated status
+    setTimeout(() => window.location.reload(), 1000);
+  };
+
+  return (
+    <button
+      onClick={handleRetry}
+      disabled={retrying}
+      className="px-4 py-2 rounded-lg bg-red-600/20 border border-red-500/30 text-red-400 text-sm font-bold hover:bg-red-600/30 transition-colors disabled:opacity-50"
+    >
+      {retrying ? 'Retrying…' : '↻ Retry Compression'}
+    </button>
   );
 }
 
