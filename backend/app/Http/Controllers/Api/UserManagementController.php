@@ -60,11 +60,28 @@ class UserManagementController extends Controller
 
         $user->update($data);
 
+        // Sync Packer record
+        if ($user->role === 'packer' && $user->packer_code) {
+            Packer::updateOrCreate(
+                ['code' => $user->packer_code],
+                ['name' => $user->name, 'active' => $user->is_active]
+            );
+        } else {
+            // If role changed away from packer, remove packer record
+            if ($user->packer_code) {
+                Packer::where('code', $user->packer_code)->delete();
+            }
+        }
+
         return response()->json($user);
     }
 
     public function destroy(User $user): JsonResponse
     {
+        // Also delete associated Packer record
+        if ($user->packer_code) {
+            Packer::where('code', $user->packer_code)->delete();
+        }
         $user->tokens()->delete();
         $user->delete();
         return response()->json(['message' => 'User deleted']);
