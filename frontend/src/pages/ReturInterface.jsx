@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBarcodeScanner } from "../hooks/useBarcodeScanner.js";
 import { useVideoRecorder } from "../hooks/useVideoRecorder.js";
-import { uploadVideo, listPackers } from "../api/client.js";
+import { uploadReturVideo, listPackers } from "../api/client.js";
 import { enqueueUpload, getPendingCount, getAllPending, removeFromQueue } from "../hooks/offlineQueue.js";
 import { useAuth } from "../contexts/AuthContext.jsx";
 
@@ -13,20 +13,20 @@ import { useAuth } from "../contexts/AuthContext.jsx";
  *                    Same barcode again => discard + re-record (per PRD).
  * ------------------------------------------------------------------------- */
 const STATE = {
-  IDLE:      "IDLE",
-  RECORDING: "RECORDING",
-  CONFIRMED: "CONFIRMED",
+  IDLE_RTR: "IDLE_RTR",
+  RECORDING_RTR: "RECORDING_RTR",
+  CONFIRMED_RTR: "CONFIRMED_RTR",
 };
 
 const TONE = {
-  IDLE:      { bar: "bg-slate-900/90 backdrop-blur border-b border-white/5", dot: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]", text: "text-slate-200", label: "READY" },
-  RECORDING: { bar: "bg-gradient-to-r from-red-900/90 to-rose-900/90 backdrop-blur border-b border-red-500/20", dot: "bg-red-500 animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.7)]", text: "text-white", label: "● RECORDING" },
-  CONFIRMED: { bar: "bg-gradient-to-r from-emerald-900/90 to-teal-900/90 backdrop-blur border-b border-emerald-500/20", dot: "bg-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.5)]", text: "text-white", label: "✓ SAVED" },
+  IDLE_RTR:      { bar: "bg-slate-900/90 backdrop-blur border-b border-white/5", dot: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]", text: "text-slate-200", label: "SIAP RETUR" },
+  RECORDING_RTR: { bar: "bg-gradient-to-r from-red-900/90 to-rose-900/90 backdrop-blur border-b border-red-500/20", dot: "bg-red-500 animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.7)]", text: "text-white", label: "● MEREKAM RETUR" },
+  CONFIRMED_RTR: { bar: "bg-gradient-to-r from-emerald-900/90 to-teal-900/90 backdrop-blur border-b border-emerald-500/20", dot: "bg-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.5)]", text: "text-white", label: "✓ SELESAI RETUR" },
 };
 
 const MAX_LOG = 8;
 
-export default function PackerInterface() {
+export default function ReturInterface() {
   const videoEl     = useRef(null);
   const labelEl     = useRef(null);  // second webcam preview
   const labelStream = useRef(null);
@@ -35,8 +35,8 @@ export default function PackerInterface() {
 
   // ---- camera selection state ----
   const [cameras, setCameras] = useState([]);
-  const [mainCameraId, setMainCameraId] = useState(() => localStorage.getItem('packer.mainCameraId') || null);
-  const [labelCameraId, setLabelCameraId] = useState(() => localStorage.getItem('packer.labelCameraId') || null);
+  const [mainCameraId, setMainCameraId] = useState(() => localStorage.getItem('retur.mainCameraId') || null);
+  const [labelCameraId, setLabelCameraId] = useState(() => localStorage.getItem('retureraId') || null);
   const [cameraSaved, setCameraSaved] = useState(false);
 
   // Build constraints from selected deviceId
@@ -56,7 +56,7 @@ export default function PackerInterface() {
     return '';
   });
 
-  const [machineState, setMachineState] = useState(STATE.IDLE);
+  const [machineState, setMachineState] = useState(STATE.IDLE_RTR);
   const [currentOrder, setCurrentOrder] = useState(null);
   const [lastBarcode,  setLastBarcode]  = useState(null);
   const [log, setLog] = useState([]); // recent actions
@@ -64,6 +64,7 @@ export default function PackerInterface() {
 
   const [lastFailed, setLastFailed]   = useState(null); // { orderId, blob } for retry
   const [pendingCount, setPendingCount] = useState(0);    // offline upload queue size
+  const [keterangan, setKeterangan] = useState('');  // notes for retur
   // Timestamp mode
   const [tsMode, setTsMode]           = useState('realtime'); // 'realtime' | 'manual'
   const [tsDate, setTsDate]           = useState('');          // YYYY-MM-DD
@@ -73,12 +74,14 @@ export default function PackerInterface() {
   const stateRef        = useRef(machineState);
   const currentOrderRef = useRef(currentOrder);
   const packerCodeRef   = useRef(packerCode);
+  const keteranganRef  = useRef(keterangan);
   const tsModeRef       = useRef(tsMode);
   const tsDateRef       = useRef(tsDate);
   const tsTimeRef       = useRef(tsTime);
   useEffect(() => { stateRef.current = machineState; }, [machineState]);
   useEffect(() => { currentOrderRef.current = currentOrder; }, [currentOrder]);
   useEffect(() => { packerCodeRef.current = packerCode; }, [packerCode]);
+  useEffect(() => { keteranganRef.current = keterangan; }, [keterangan]);
   useEffect(() => { tsModeRef.current = tsMode; }, [tsMode]);
   useEffect(() => { tsDateRef.current = tsDate; }, [tsDate]);
   useEffect(() => { tsTimeRef.current = tsTime; }, [tsTime]);
@@ -271,11 +274,11 @@ export default function PackerInterface() {
       ctx.fillText(ts, 14, 26);
 
       // Draw order ID + packer (yellow, below timestamp)
-      const orderId = currentOrderRef.current?.orderId || '-';
-      const pkrCode = packerCodeRef.current || '-';
+      const _orderId = currentOrderRef.current?.orderId || '-';
+      const _pkrCode = packerCodeRef.current || '-';
       ctx.fillStyle = '#facc15';
       ctx.font = 'bold 14px monospace';
-      ctx.fillText(`${orderId} | ${pkrCode}`, 14, 48);
+      ctx.fillStyle = '#34d399'; ctx.font = 'bold 18px monospace'; ctx.fillText('🔄 RETURN', 14, 48);
 
       // Anti-optimize: tiny frame counter dot (forces browser to encode EVERY frame)
       frameN++;
@@ -350,7 +353,7 @@ export default function PackerInterface() {
         return false;
       }
       setCurrentOrder({ orderId, startedAt: new Date() });
-      setMachineState(STATE.RECORDING);
+      setMachineState(STATE.RECORDING_RTR);
       pushLog({ kind: "start", orderId });
       return true;
     },
@@ -369,7 +372,7 @@ export default function PackerInterface() {
       while ((item = (await getAllPending())[0])) {
         try {
           setBusyMessage(`⬆ Uploading ${item.orderId}…`);
-          await uploadVideo({
+          await uploadReturVideo({ keterangan: keteranganRef.current,
             orderId: item.orderId,
             packerCode: item.packerCode || undefined,
             blob: item.blob,
@@ -479,17 +482,17 @@ export default function PackerInterface() {
       const current = currentOrderRef.current;
 
       // -- State 0: IDLE -----------------------------------------------------
-      if (state === STATE.IDLE) {
+      if (state === STATE.IDLE_RTR) {
         beginRecording(orderId);
         return;
       }
 
       // -- State 1: RECORDING ------------------------------------------------
-      if (state === STATE.RECORDING) {
+      if (state === STATE.RECORDING_RTR) {
         if (current && orderId === current.orderId) {
           // Same barcode => stop & save
           await finalizeRecording({ andUpload: true });
-          setMachineState(STATE.CONFIRMED);
+          setMachineState(STATE.CONFIRMED_RTR);
           // keep currentOrder so a re-scan in CONFIRMED can trigger re-record
           return;
         }
@@ -500,7 +503,7 @@ export default function PackerInterface() {
       }
 
       // -- State 2: CONFIRMED ------------------------------------------------
-      if (state === STATE.CONFIRMED) {
+      if (state === STATE.CONFIRMED_RTR) {
         if (current && orderId === current.orderId) {
           // Per PRD: re-record. We have to ALSO drop the previously uploaded
           // copy on the server side — but to keep the hot loop lean we simply
@@ -528,7 +531,7 @@ export default function PackerInterface() {
   // UI
   // ---------------------------------------------------------------------------
   const tone = TONE[machineState];
-  const elapsed = useElapsedSeconds(machineState === STATE.RECORDING ? currentOrder?.startedAt : null);
+  const elapsed = useElapsedSeconds(machineState === STATE.RECORDING_RTR ? currentOrder?.startedAt : null);
 
   return (
     <div className="flex fixed top-14 left-0 right-0 bottom-0 overflow-hidden">
@@ -540,9 +543,9 @@ export default function PackerInterface() {
           <div className="flex items-center gap-4">
             <span
               className={`h-5 w-5 rounded-full ${
-                machineState === STATE.RECORDING
+                machineState === STATE.RECORDING_RTR
                   ? "bg-white animate-pulse-ring"
-                  : machineState === STATE.CONFIRMED
+                  : machineState === STATE.CONFIRMED_RTR
                   ? "bg-white"
                   : "bg-slate-400"
               }`}
@@ -600,8 +603,8 @@ export default function PackerInterface() {
             </div>
           )}
 
-          {machineState === STATE.RECORDING && (
-            <div className="absolute top-4 left-4 flex items-center gap-2 rounded-full bg-red-600/90 px-3 py-1.5 text-sm font-bold text-white shadow">
+          {machineState === STATE.RECORDING_RTR && (
+            <div className="absolute top-4 left-4 flex items-center gap-2 rounded-full bg-emerald-600/90 px-3 py-1.5 text-sm font-bold text-white shadow">
               <span className="h-2.5 w-2.5 rounded-full bg-white animate-pulse" />
               REC {formatElapsed(elapsed)}
             </div>
@@ -673,6 +676,24 @@ export default function PackerInterface() {
           )}
         </div>
 
+        {/* 📝 Keterangan Retur */}
+        <div className="p-5 border-b border-border">
+          <div className="text-xs uppercase tracking-widest text-slate-400 mb-2">
+            📝 Keterangan Retur
+          </div>
+          <textarea
+            value={keterangan}
+            onChange={(e) => setKeterangan(e.target.value)}
+            placeholder="Alasan retur, kondisi paket, dll..."
+            rows={2}
+            maxLength={500}
+            className="w-full rounded-lg bg-slate-800 border border-slate-600 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500
+                       focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50
+                       transition-all duration-200 resize-none"
+          />
+          <p className="text-[10px] text-slate-500 mt-1">{keterangan.length}/500</p>
+        </div>
+
         {/* ⏰ Timestamp Control */}
         <div className="p-5 border-b border-border">
           <div className="text-xs uppercase tracking-widest text-slate-400 mb-3">
@@ -701,7 +722,7 @@ export default function PackerInterface() {
               }}
               className={`flex-1 py-2 text-xs font-semibold transition-colors ${
                 tsMode === 'manual'
-                  ? 'bg-amber-500/20 text-amber-300 border-b-2 border-amber-400'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-b-2 border-emerald-400'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -721,7 +742,7 @@ export default function PackerInterface() {
                   value={tsDate}
                   onChange={(e) => setTsDate(e.target.value)}
                   className="w-full rounded-lg bg-slate-800 border border-slate-600 px-3 py-2 text-sm text-slate-100 
-                             focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50
+                             focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50
                              transition-all duration-200"
                 />
               </div>
@@ -736,7 +757,7 @@ export default function PackerInterface() {
                     value={tsTime}
                     onChange={(e) => setTsTime(e.target.value)}
                     className="w-full rounded-lg bg-slate-800 border border-slate-600 px-3 py-2 text-sm text-slate-100 
-                               focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50
+                               focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50
                                transition-all duration-200"
                   />
                 </div>
@@ -811,8 +832,8 @@ export default function PackerInterface() {
 
           <button
             onClick={() => {
-              if (mainCameraId) localStorage.setItem('packer.mainCameraId', mainCameraId);
-              if (labelCameraId) localStorage.setItem('packer.labelCameraId', labelCameraId);
+              if (mainCameraId) localStorage.setItem('retur.mainCameraId', mainCameraId);
+              if (labelCameraId) localStorage.setItem('retureraId', labelCameraId);
               setCameraSaved(true);
               setTimeout(() => setCameraSaved(false), 2000);
             }}
@@ -875,14 +896,14 @@ export default function PackerInterface() {
           )}
 
           {pendingCount > 0 && (
-            <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+            <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
               <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-xs text-amber-300 font-semibold">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-xs text-emerald-300 font-semibold">
                   {pendingCount} video{pendingCount > 1 ? 's' : ''} pending upload
                 </span>
               </div>
-              <div className="text-[10px] text-amber-400/70 mt-1">
+              <div className="text-[10px] text-emerald-400/70 mt-1">
                 Will auto-upload when connection is restored
               </div>
             </div>
@@ -890,11 +911,11 @@ export default function PackerInterface() {
         </div>
 
         <div className="p-4 border-t border-border bg-slate-900/40 text-[11px] leading-relaxed text-slate-400">
-          <div className="font-semibold text-slate-300 mb-1">Alur Scan</div>
-          1. Scan Resi → mulai merekam.<br />
+          <div className="font-semibold text-slate-300 mb-1">Alur Scan Retur</div>
+          1. Scan Resi → mulai merekam retur.<br />
           2. Scan Resi yang sama → simpan & selesai.<br />
           3. Scan Resi berbeda saat merekam → rekaman sebelumnya disimpan, yang baru dimulai.<br />
-          4. Saat status SELESAI, scan Resi yang sama → rekam ulang.
+          4. Saat status SELESAI RETUR, scan Resi yang sama → rekam ulang.
         </div>
       </aside>
     </div>
@@ -915,9 +936,9 @@ function DevScanSimulator({ onScan }) {
   return (
     <div
       data-bypass-scanner
-      className="border-t border-amber-500/40 bg-amber-500/10 px-8 py-2.5 flex items-center gap-3 text-xs"
+      className="border-t border-emerald-500/40 bg-emerald-500/10 px-8 py-2.5 flex items-center gap-3 text-xs"
     >
-      <span className="font-bold uppercase tracking-widest text-amber-300">
+      <span className="font-bold uppercase tracking-widest text-emerald-300">
         Dev · Simulator Scan
       </span>
       <input
@@ -931,16 +952,16 @@ function DevScanSimulator({ onScan }) {
           }
         }}
         placeholder="ketik barcode lalu Enter (mis. ORDER-001)"
-        className="flex-1 rounded-md bg-slate-900/80 border border-amber-500/30 px-3 py-1.5 font-mono text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-400"
+        className="flex-1 rounded-md bg-slate-900/80 border border-emerald-500/30 px-3 py-1.5 font-mono text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-400"
       />
       <button
         type="button"
         onClick={submit}
-        className="rounded-md bg-amber-500 px-3 py-1.5 font-semibold text-slate-900 hover:bg-amber-400"
+        className="rounded-md bg-emerald-500 px-3 py-1.5 font-semibold text-slate-900 hover:bg-emerald-400"
       >
         Scan
       </button>
-      <span className="text-amber-200/70">
+      <span className="text-emerald-200/70">
         Hanya muncul di mode dev — scanner USB asli tetap berfungsi normal.
       </span>
     </div>
@@ -969,9 +990,9 @@ function StateDiagram({ active }) {
   };
   return (
     <div className="grid grid-cols-3 gap-2">
-      {node(STATE.IDLE, "IDLE")}
-      {node(STATE.RECORDING, "RECORDING")}
-      {node(STATE.CONFIRMED, "CONFIRMED")}
+      {node(STATE.IDLE_RTR, "IDLE")}
+      {node(STATE.RECORDING_RTR, "RECORDING")}
+      {node(STATE.CONFIRMED_RTR, "CONFIRMED")}
     </div>
   );
 }
@@ -980,7 +1001,7 @@ function EventBadge({ kind }) {
   const map = {
     start:    { bg: "bg-red-600/20",     text: "text-red-300",     label: "START" },
     stop:     { bg: "bg-emerald-600/20", text: "text-emerald-300", label: "UPLOADED" },
-    queued:   { bg: "bg-amber-600/20",   text: "text-amber-300",   label: "QUEUED" },
+    queued:   { bg: "bg-emerald-600/20",   text: "text-emerald-300",   label: "QUEUED" },
     discard:  { bg: "bg-slate-600/20",   text: "text-slate-400",   label: "DISCARDED" },
     rerecord: { bg: "bg-sky-600/20",     text: "text-sky-300",     label: "RE-RECORD" },
     error:    { bg: "bg-red-600/30",     text: "text-red-200",     label: "ERROR" },

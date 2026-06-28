@@ -58,4 +58,18 @@ return [
     |--------------------------------------------------------------------------
     */
     'max_upload_mb' => (int) env('VIDEO_MAX_UPLOAD_MB', 512),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Retur videos bucket (separate from regular packing)
+    |--------------------------------------------------------------------------
+    */
+    'retur_minio_bucket' => env('RETUR_MINIO_BUCKET', 'retur-videos'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Retur public URL base (same MinIO, different bucket)
+    |--------------------------------------------------------------------------
+    */
+    'retur_minio_public_url' => rtrim(env('RETUR_MINIO_PUBLIC_URL', env('MINIO_PUBLIC_URL', 'http://127.0.0.1:9000')), '/'),
 ];

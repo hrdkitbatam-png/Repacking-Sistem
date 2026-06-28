@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Packer;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -12,7 +13,9 @@ class UserManagementController extends Controller
 {
     public function index(): JsonResponse
     {
-        return response()->json(User::latest()->paginate(25));
+        return response()->json(
+            User::with('roleRelation:id,name,permissions')->latest()->paginate(25)
+        );
     }
 
     public function store(Request $request): JsonResponse
@@ -21,24 +24,28 @@ class UserManagementController extends Controller
             'name'        => 'required|string|max:100',
             'username'    => 'required|string|max:32|unique:users,username',
             'password'    => 'required|string|min:6',
-            'role'        => 'required|in:admin,cs,packer',
+            'role_id'     => 'required|exists:roles,id',
             'packer_code' => 'nullable|string|max:32',
         ]);
 
+        $role = \App\Models\Role::find($data['role_id']);
+        $data['role'] = $role->name;
+
         // If role is packer and packer_code is not provided, auto-create packer record
-        if ($data['role'] === 'packer') {
+        if ($role->name === 'packer') {
             if (empty($data['packer_code'])) {
                 $data['packer_code'] = 'PKR' . strtoupper(substr($data['username'], 0, 3));
             }
             Packer::firstOrCreate(
                 ['code' => $data['packer_code']],
-                ['name' => $data['name'], 'is_active' => true]
+                ['name' => $data['name'], 'active' => true]
             );
         }
 
         $user = User::create($data);
+        AuditLog::log(request()->user()->id, 'create_user', "Created user {$user->name} (@{$user->username}) with role {$role->name}");
 
-        return response()->json($user, 201);
+        return response()->json($user->load('roleRelation:id,name,permissions'), 201);
     }
 
     public function update(Request $request, User $user): JsonResponse
@@ -47,7 +54,7 @@ class UserManagementController extends Controller
             'name'        => 'sometimes|string|max:100',
             'username'    => 'sometimes|string|max:32|unique:users,username,' . $user->id,
             'password'    => 'nullable|string|min:6',
-            'role'        => 'sometimes|in:admin,cs,packer',
+            'role_id'     => 'sometimes|exists:roles,id',
             'packer_code' => 'nullable|string|max:32',
             'is_active'   => 'sometimes|boolean',
         ]);
@@ -58,7 +65,13 @@ class UserManagementController extends Controller
             unset($data['password']);
         }
 
+        if (isset($data['role_id'])) {
+            $role = \App\Models\Role::find($data['role_id']);
+            $data['role'] = $role->name;
+        }
+
         $user->update($data);
+        AuditLog::log(request()->user()->id, 'update_user', "Updated user {$user->name} (@{$user->username})");
 
         // Sync Packer record
         if ($user->role === 'packer' && $user->packer_code) {
@@ -67,22 +80,22 @@ class UserManagementController extends Controller
                 ['name' => $user->name, 'active' => $user->is_active]
             );
         } else {
-            // If role changed away from packer, remove packer record
             if ($user->packer_code) {
                 Packer::where('code', $user->packer_code)->delete();
             }
         }
 
-        return response()->json($user);
+        return response()->json($user->load('roleRelation:id,name,permissions'));
     }
 
     public function destroy(User $user): JsonResponse
     {
-        // Also delete associated Packer record
+        $adminUser = request()->user();
         if ($user->packer_code) {
             Packer::where('code', $user->packer_code)->delete();
         }
         $user->tokens()->delete();
+        AuditLog::log($adminUser->id, 'delete_user', "Deleted user {$user->name} (@{$user->username})");
         $user->delete();
         return response()->json(['message' => 'User deleted']);
     }

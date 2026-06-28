@@ -3,8 +3,7 @@
 namespace App\Jobs;
 
 use App\Enums\VideoStatus;
-use App\Models\PackingVideo;
-use App\Services\MinioService;
+use App\Models\ReturVideo;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -13,38 +12,29 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Runs in the queue worker (queue: "video-compression"):
- *
- *   1. Locate raw temp file written by VideoUploadController.
- *   2. Upload the raw file directly to MinIO (NO FFmpeg compression).
- *   3. Update the DB row with the public URL + size + status="available".
- *   4. ALWAYS delete the temp file in `finally`.
- */
-class CompressAndUploadVideo implements ShouldQueue
+class UploadReturVideo implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries   = 3;
-    public int $timeout = 300; // 5 min — raw upload
+    public int $timeout = 300;
 
     public function __construct(public int $videoId)
     {
         $this->onQueue('repack-queue');
     }
 
-    public function handle(MinioService $minio): void
+    public function handle(): void
     {
-        /** @var PackingVideo|null $video */
-        $video = PackingVideo::query()->find($this->videoId);
+        $video = ReturVideo::query()->find($this->videoId);
         if (! $video) {
-            Log::warning('UploadRawVideo: video row vanished', ['id' => $this->videoId]);
+            Log::warning('UploadReturVideo: video row vanished', ['id' => $this->videoId]);
             return;
         }
 
         $tmpDisk = Storage::disk(config('video.temp_disk'));
         if (! $video->raw_path || ! $tmpDisk->exists($video->raw_path)) {
-            $this->fail($video, 'Raw file missing on disk: ' . $video->raw_path);
+            $this->fail($video, 'Raw file missing: ' . $video->raw_path);
             return;
         }
 
@@ -57,20 +47,31 @@ class CompressAndUploadVideo implements ShouldQueue
         ]);
 
         try {
-            // Upload raw file directly — NO FFmpeg compression
-            $objectKey = $minio->buildObjectKey(
-                $video->order_id,
-                optional($video->packer)->code,
-                $rawExt,
+            $now       = now();
+            $packerCode = optional($video->packer)->code ?: 'unknown';
+            $safeOrder  = preg_replace('/[^A-Za-z0-9_\-]/', '_', $video->order_id);
+            $objectKey = sprintf(
+                '%s/%s/%s/%s/%s-%d.%s',
+                $now->format('Y'), $now->format('m'), $now->format('d'),
+                $packerCode, $safeOrder, $now->getTimestamp(),
+                ltrim($rawExt, '.'),
             );
 
             $mimeType = $video->mime_type ?? 'video/webm';
-            $minio->uploadFromLocalPath($rawAbsolute, $objectKey, $mimeType);
+            $returDisk = Storage::disk('retur_minio');
+            $returDisk->put($objectKey, fopen($rawAbsolute, 'rb'), [
+                'visibility'  => 'public',
+                'ContentType' => $mimeType,
+            ]);
+
+            $bucket  = config('video.retur_minio_bucket', 'retur-videos');
+            $baseUrl = rtrim(config('video.retur_minio_public_url', ''), '/');
+            $publicUrl = $baseUrl . '/' . $bucket . '/' . ltrim($objectKey, '/');
 
             $video->update([
                 'status'                => VideoStatus::Available,
                 'minio_object_key'      => $objectKey,
-                'minio_url'             => $minio->publicUrl($objectKey),
+                'minio_url'             => $publicUrl,
                 'mime_type'             => $mimeType,
                 'compressed_size_bytes' => @filesize($rawAbsolute) ?: null,
                 'uploaded_at'           => now(),
@@ -78,39 +79,28 @@ class CompressAndUploadVideo implements ShouldQueue
                 'error_message'         => null,
             ]);
 
-            Log::info('Video uploaded (raw, no compression)', [
+            Log::info('Retur video uploaded', [
                 'id'         => $video->id,
                 'order_id'   => $video->order_id,
-                'size_bytes' => $video->compressed_size_bytes,
                 'object_key' => $objectKey,
             ]);
         } catch (\Throwable $e) {
-            Log::error('UploadRawVideo failed', [
-                'id'    => $video->id,
-                'error' => $e->getMessage(),
-            ]);
+            Log::error('UploadReturVideo failed', ['id' => $video->id, 'error' => $e->getMessage()]);
             $this->fail($video, $e->getMessage());
             throw $e;
         } finally {
-            $this->safeDelete($rawAbsolute);
+            if (is_file($rawAbsolute)) @unlink($rawAbsolute);
             if ($video->exists) {
                 $video->forceFill(['raw_path' => null])->saveQuietly();
             }
         }
     }
 
-    private function fail(PackingVideo $video, string $message): void
+    private function fail(ReturVideo $video, string $message): void
     {
         $video->forceFill([
             'status'        => VideoStatus::Failed,
             'error_message' => substr($message, 0, 2000),
         ])->saveQuietly();
-    }
-
-    private function safeDelete(string $path): void
-    {
-        if (is_file($path)) {
-            @unlink($path);
-        }
     }
 }

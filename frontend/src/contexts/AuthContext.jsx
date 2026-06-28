@@ -27,10 +27,16 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const token = localStorage.getItem('packer_token');
-    const user = localStorage.getItem('packer_user');
-    if (token && user) {
+    const cached = localStorage.getItem('packer_user');
+    if (token && cached) {
       try {
-        dispatch({ type: 'LOGIN_SUCCESS', payload: { user: JSON.parse(user), token } });
+        dispatch({ type: 'LOGIN_SUCCESS', payload: { user: JSON.parse(cached), token } });
+        // Refresh user data from server (includes latest permissions)
+        api.get('/me').then(r => {
+          const freshUser = r.data.user;
+          localStorage.setItem('packer_user', JSON.stringify(freshUser));
+          dispatch({ type: 'LOGIN_SUCCESS', payload: { user: freshUser, token } });
+        }).catch(() => {});
       } catch {
         localStorage.removeItem('packer_token');
         localStorage.removeItem('packer_user');
@@ -61,8 +67,14 @@ export function AuthProvider({ children }) {
     dispatch({ type: 'LOGOUT' });
   };
 
+  const hasPermission = (perm) => {
+    if (!state.user?.permissions) return false;
+    if (state.user.permissions.includes('*')) return true; // admin wildcard
+    return state.user.permissions.includes(perm);
+  };
+
   return (
-    <AuthContext.Provider value={{ ...state, login, logout }}>
+    <AuthContext.Provider value={{ ...state, login, logout, hasPermission }}>
       {children}
     </AuthContext.Provider>
   );

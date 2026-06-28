@@ -93,3 +93,21 @@ export async function listPackers() {
   const { data } = await api.get("/packers");
   return data;
 }
+
+export async function uploadReturVideo({ orderId, packerCode, blob, recordedAt, keterangan }) {
+  const form = new FormData();
+  form.append("order_id", orderId);
+  if (packerCode) form.append("packer_code", packerCode);
+  if (recordedAt) form.append("recorded_at", recordedAt);
+  if (keterangan) form.append("keterangan", keterangan);
+
+  const filename = `retur-${orderId}-${Date.now()}.${
+    blob.type.includes("mp4") ? "mp4" : "webm"
+  }`;
+  form.append("video", blob, filename);
+
+  const { data } = await api.post("/retur-videos", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}

@@ -4,10 +4,13 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
 import SidebarLayout from "./layouts/SidebarLayout.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import PackerInterface from "./pages/PackerInterface.jsx";
+import ReturInterface from "./pages/ReturInterface.jsx";
+import ReturDashboard from "./pages/ReturDashboard.jsx";
 import CSDashboard from "./pages/CSDashboard.jsx";
 import UsersPage from "./pages/UsersPage.jsx";
 import PackersPage from "./pages/PackersPage.jsx";
 import RolesPage from "./pages/RolesPage.jsx";
+import AuditLogsPage from "./pages/AuditLogsPage.jsx";
 
 function ProtectedRoute({ children }) {
   const { token, loading } = useAuth();
@@ -32,8 +35,8 @@ function ProtectedRoute({ children }) {
 }
 
 function AdminOnly({ children }) {
-  const { user } = useAuth();
-  if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  const { hasPermission } = useAuth();
+  if (!hasPermission('users') && !hasPermission('*')) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -44,10 +47,13 @@ function RouteBoundary() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/" element={<ProtectedRoute><PackerInterface /></ProtectedRoute>} />
+        <Route path="/retur" element={<ProtectedRoute><ReturInterface /></ProtectedRoute>} />
+        <Route path="/retur-dashboard" element={<ProtectedRoute><ReturDashboard /></ProtectedRoute>} />
         <Route path="/dashboard" element={<ProtectedRoute><CSDashboard /></ProtectedRoute>} />
         <Route path="/packers" element={<ProtectedRoute><AdminOnly><PackersPage /></AdminOnly></ProtectedRoute>} />
         <Route path="/users" element={<ProtectedRoute><AdminOnly><UsersPage /></AdminOnly></ProtectedRoute>} />
         <Route path="/roles" element={<ProtectedRoute><AdminOnly><RolesPage /></AdminOnly></ProtectedRoute>} />
+        <Route path="/audit-logs" element={<ProtectedRoute><AdminOnly><AuditLogsPage /></AdminOnly></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </ErrorBoundary>

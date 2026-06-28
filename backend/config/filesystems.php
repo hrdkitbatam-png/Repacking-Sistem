@@ -19,6 +19,18 @@ return [
             'throw'  => false,
         ],
 
+        // MinIO bucket for retur videos
+        'retur_minio' => [
+            'driver'   => 's3',
+            'key'      => env('MINIO_KEY'),
+            'secret'   => env('MINIO_SECRET'),
+            'region'   => env('MINIO_REGION', 'us-east-1'),
+            'bucket'   => env('RETUR_MINIO_BUCKET', 'retur-videos'),
+            'endpoint' => env('MINIO_ENDPOINT', 'http://127.0.0.1:9000'),
+            'use_path_style_endpoint' => true,
+            'throw'  => true,
+        ],
+
         // Working directory for raw + compressed temp files before MinIO upload.
         // Anything written here is considered ephemeral and MUST be cleaned up
         // by the CompressAndUploadVideo job. See storage_policy in .cursorrules.

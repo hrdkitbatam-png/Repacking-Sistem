@@ -7,13 +7,11 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({ name: '', username: '', password: '', role: 'packer', packer_code: '', is_active: true });
+  const [form, setForm] = useState({ name: '', username: '', password: '', role_id: '', packer_code: '', is_active: true });
   const [error, setError] = useState('');
 
   const fetchUsers = useCallback(async () => {
     try {
-      
-      
       const [ur, rr] = await Promise.all([
         api.get('/users'),
         api.get('/roles'),
@@ -28,7 +26,9 @@ export default function UsersPage() {
 
   const openCreate = () => {
     setEditingId(null);
-    setForm({ name: '', username: '', password: '', role: 'packer', packer_code: '', is_active: true });
+    // Default to first non-admin role
+    const defaultRole = roles.find(r => r.name === 'packer') || roles[0];
+    setForm({ name: '', username: '', password: '', role_id: defaultRole?.id || '', packer_code: '', is_active: true });
     setError('');
     setShowModal(true);
   };
@@ -39,13 +39,16 @@ export default function UsersPage() {
       name: user.name,
       username: user.username,
       password: '',
-      role: user.role,
+      role_id: user.role_id || '',
       packer_code: user.packer_code || '',
       is_active: !!user.is_active,
     });
     setError('');
     setShowModal(true);
   };
+
+  const selectedRole = roles.find(r => r.id == form.role_id);
+  const isPackerRole = selectedRole?.name === 'packer';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -55,8 +58,8 @@ export default function UsersPage() {
       const payload = {
         name: form.name,
         username: form.username,
-        role: form.role,
-        packer_code: form.role === 'packer' ? form.packer_code : null,
+        role_id: form.role_id,
+        packer_code: isPackerRole ? form.packer_code : null,
         is_active: form.is_active,
       };
       if (form.password) payload.password = form.password;
@@ -79,6 +82,18 @@ export default function UsersPage() {
       await api.delete(`/users/${id}`);
       await fetchUsers();
     } catch {}
+  };
+
+  const roleBadgeClass = (name) => {
+    switch(name) {
+      case 'admin': return 'bg-purple-500/10 text-purple-400 border border-purple-500/20';
+      case 'cs': return 'bg-blue-500/10 text-blue-400 border border-blue-500/20';
+      default: return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+    }
+  };
+
+  const getUserRole = (u) => {
+    return u.role_relation?.name || u.role || '-';
   };
 
   return (
@@ -123,42 +138,41 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
-              {users.map((u) => (
-                <tr key={u.id} className="hover:bg-slate-800/30">
-                  <td className="px-4 py-3 font-medium text-slate-200">{u.name}</td>
-                  <td className="px-4 py-3 text-slate-400">@{u.username}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                      u.role === 'admin' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
-                      u.role === 'cs' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
-                      'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                    }`}>
-                      {u.role?.toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {u.role === 'packer' && u.packer_code ? (
-                      <span className="font-mono text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">{u.packer_code}</span>
-                    ) : (
-                      <span className="text-slate-500">-</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold ${
-                      u.is_active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700/50 text-slate-500'
-                    }`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${u.is_active ? 'bg-emerald-400' : 'bg-slate-500'}`} />
-                      {u.is_active ? 'Aktif' : 'Nonaktif'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <button onClick={() => openEdit(u)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-400 hover:bg-amber-500/20">Edit</button>
-                      <button onClick={() => handleDelete(u.id)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-500/10 text-rose-400 hover:bg-rose-500/20">Hapus</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {users.map((u) => {
+                const roleName = getUserRole(u);
+                return (
+                  <tr key={u.id} className="hover:bg-slate-800/30">
+                    <td className="px-4 py-3 font-medium text-slate-200">{u.name}</td>
+                    <td className="px-4 py-3 text-slate-400">@{u.username}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${roleBadgeClass(roleName)}`}>
+                        {roleName?.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {roleName === 'packer' && u.packer_code ? (
+                        <span className="font-mono text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">{u.packer_code}</span>
+                      ) : (
+                        <span className="text-slate-500">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold ${
+                        u.is_active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700/50 text-slate-500'
+                      }`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${u.is_active ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                        {u.is_active ? 'Aktif' : 'Nonaktif'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button onClick={() => openEdit(u)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-400 hover:bg-amber-500/20">Edit</button>
+                        <button onClick={() => handleDelete(u.id)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-500/10 text-rose-400 hover:bg-rose-500/20">Hapus</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -174,12 +188,13 @@ export default function UsersPage() {
               <input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} required placeholder="Nama" className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30" />
               <input value={form.username} onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))} required placeholder="Username" className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30" />
               <input value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} type="password" placeholder={editingId ? 'Kosongkan jika tidak ubah' : 'Password'} className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30" />
-              <select value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))} className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30">
-                <option value="admin">Admin</option>
-                <option value="cs">CS</option>
-                <option value="packer">Packer</option>
+              <select value={form.role_id} onChange={(e) => setForm((p) => ({ ...p, role_id: e.target.value }))} required className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30">
+                <option value="">-- Pilih Role --</option>
+                {roles.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name} {r.permissions?.includes('*') ? '(Admin)' : ''}</option>
+                ))}
               </select>
-              {form.role === 'packer' && (
+              {isPackerRole && (
                 <input value={form.packer_code} onChange={(e) => setForm((p) => ({ ...p, packer_code: e.target.value.toUpperCase() }))} placeholder="Kode Packer (PKR001)" className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white font-mono text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30" />
               )}
               <label className="flex items-center gap-3 cursor-pointer">

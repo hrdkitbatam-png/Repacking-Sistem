@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\PackerController;
 use App\Http\Controllers\Api\PackingVideoController;
+use App\Http\Controllers\Api\ReturVideoController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\UserManagementController;
 use App\Http\Controllers\Api\StorageController;
@@ -40,8 +42,21 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('{user}', [UserManagementController::class, 'destroy']);
     });
 
+    // Retur videos
+    Route::prefix('retur-videos')->group(function () {
+        Route::get('/',                  [ReturVideoController::class, 'index']);
+        Route::post('/',                 [ReturVideoController::class, 'store']);
+        Route::get('by-order/{orderId}', [ReturVideoController::class, 'byOrder']);
+        Route::get('{returVideo}',     [ReturVideoController::class, 'show']);
+        Route::delete('{returVideo}',  [ReturVideoController::class, 'destroy']);
+    });
+
     // Roles management
     Route::apiResource('roles', RoleController::class);
+
+    // Audit logs
+    Route::get('audit-logs', [AuditLogController::class, 'index']);
+    Route::get('audit-logs/actions', [AuditLogController::class, 'actions']);
 
     // Storage status
     Route::get('storage/status', [StorageController::class, 'status']);

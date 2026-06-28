@@ -108,7 +108,7 @@ export function useVideoRecorder({
     const mimeType = pickMimeType();
     const rec = new MediaRecorder(source, {
       mimeType: mimeType || undefined,
-      videoBitsPerSecond: 200_000, // 200 kbps — 480p
+      videoBitsPerSecond: 1_000_000, // 1 Mbps — 720p
     });
     rec.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) chunksRef.current.push(e.data);

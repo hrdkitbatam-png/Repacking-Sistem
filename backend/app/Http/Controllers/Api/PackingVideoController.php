@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Enums\VideoStatus;
 use App\Http\Controllers\Controller;
 use App\Jobs\CompressAndUploadVideo;
+use App\Models\AuditLog;
 use App\Models\Packer;
 use App\Models\PackingVideo;
 use Illuminate\Http\JsonResponse;
@@ -132,6 +133,7 @@ class PackingVideoController extends Controller
         // Dispatch FFmpeg work asynchronously so the Packer UI is freed
         // to start the next recording immediately.
         CompressAndUploadVideo::dispatch($video->id);
+        AuditLog::log(request()->user()->id, 'upload_video', "Uploaded packing video for order {$validated['order_id']}", ['order_id' => $validated['order_id']]);
 
         return response()->json($video->fresh('packer'), 201);
     }

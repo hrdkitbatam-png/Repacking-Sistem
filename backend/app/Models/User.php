@@ -12,12 +12,14 @@ class User extends Authenticatable
     use HasApiTokens, HasFactory, Notifiable;
 
     protected $fillable = [
-        'name', 'username', 'password', 'role', 'packer_code', 'is_active',
+        'name', 'username', 'password', 'role', 'role_id', 'packer_code', 'is_active',
     ];
 
     protected $hidden = [
         'password', 'remember_token',
     ];
+
+    protected $with = ['roleRelation'];
 
     protected function casts(): array
     {
@@ -25,6 +27,11 @@ class User extends Authenticatable
             'password'   => 'hashed',
             'is_active'  => 'boolean',
         ];
+    }
+
+    public function roleRelation()
+    {
+        return $this->belongsTo(Role::class, 'role_id');
     }
 
     public function isAdmin():  bool { return $this->role === 'admin'; }

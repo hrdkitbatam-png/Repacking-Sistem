@@ -4,6 +4,7 @@ import { api } from '../api/client.js';
 const AVAILABLE_PERMS = [
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'packer_interface', label: 'Packer Interface' },
+  { key: 'retur_packer', label: 'Retur Interface' },
   { key: 'users', label: 'Manajemen User' },
   { key: 'roles', label: 'Manajemen Role' },
   { key: 'packers', label: 'Daftar Packer' },
@@ -20,11 +21,17 @@ export default function RolesPage() {
   const [error, setError] = useState('');
 
   const fetchRoles = useCallback(async () => {
+    setLoading(true);
+    setError('');
     try {
       const r = await api.get('/roles');
       setRoles(r.data || []);
-    } catch {}
-    setLoading(false);
+    } catch (err) {
+      console.error("[RolesPage] fetchRoles error:", err);
+      setError(err.response?.data?.message || 'Gagal memuat data role. Pastikan Anda memiliki akses admin.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetchRoles(); }, [fetchRoles]);
@@ -97,30 +104,36 @@ export default function RolesPage() {
             </svg>
           </div>
         ) : (
-          roles.map((role) => (
-            <div key={role.id} className="bg-slate-800/50 backdrop-blur-xl rounded-2xl p-5 border border-slate-700/50 hover:border-emerald-500/30 transition-all">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h3 className="font-bold text-white">{role.name}</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">{(role.permissions || []).length} permission</p>
+          roles.length > 0 ? (
+            roles.map((role) => (
+              <div key={role.id} className="bg-slate-800/50 backdrop-blur-xl rounded-2xl p-5 border border-slate-700/50 hover:border-emerald-500/30 transition-all">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h3 className="font-bold text-white">{role.name}</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">{(role.permissions || []).length} permission</p>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => openEdit(role)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-400 hover:bg-amber-500/20">Edit</button>
+                    <button onClick={() => handleDelete(role.id)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-500/10 text-rose-400 hover:bg-rose-500/20">Hapus</button>
+                  </div>
                 </div>
-                <div className="flex gap-1.5">
-                  <button onClick={() => openEdit(role)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-400 hover:bg-amber-500/20">Edit</button>
-                  <button onClick={() => handleDelete(role.id)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-500/10 text-rose-400 hover:bg-rose-500/20">Hapus</button>
+                <div className="flex flex-wrap gap-1.5">
+                  {(role.permissions || []).map((p) => (
+                    <span key={p} className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      {AVAILABLE_PERMS.find((ap) => ap.key === p)?.label || p}
+                    </span>
+                  ))}
+                  {(!role.permissions || role.permissions.length === 0) && (
+                    <span className="text-xs text-slate-600 italic">Tidak ada permission</span>
+                  )}
                 </div>
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {(role.permissions || []).map((p) => (
-                  <span key={p} className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    {AVAILABLE_PERMS.find((ap) => ap.key === p)?.label || p}
-                  </span>
-                ))}
-                {(!role.permissions || role.permissions.length === 0) && (
-                  <span className="text-xs text-slate-600 italic">Tidak ada permission</span>
-                )}
-              </div>
+            ))
+          ) : (
+            <div className="col-span-full p-16 text-center bg-slate-900/50 rounded-2xl border border-dashed border-slate-700">
+              <p className="text-slate-500">Tidak ada data role yang ditemukan.</p>
             </div>
-          ))
+          )
         )}
       </div>
 
